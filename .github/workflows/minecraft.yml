@@ -1,9 +1,9 @@
 name: Servidor Minecraft 24/7
 
 on:
-  workflow_dispatch: # Permite el botón manual
+  workflow_dispatch:
   schedule:
-    - cron: '0 */5 * * *' # Auto-arranque cada 5 horas para evitar el corte brusco de las 6h
+    - cron: '0 */5 * * *'
 
 jobs:
   iniciar_servidor:
@@ -13,7 +13,9 @@ jobs:
         run: |
           curl https://rclone.org/install.sh | sudo bash
           mkdir -p ~/.config/rclone
-          echo "${{ secrets.RCLONE_CONF }}" > ~/.config/rclone/rclone.conf
+          cat << 'EOF' > ~/.config/rclone/rclone.conf
+          ${{ secrets.RCLONE_CONF }}
+          EOF
 
       - name: Descargar el mundo desde Google Drive
         run: |
