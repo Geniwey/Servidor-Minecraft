@@ -1,7 +1,9 @@
 name: Servidor Minecraft 24/7
 
 on:
-  workflow_dispatch: # Permite encenderlo manualmente con un botón
+  workflow_dispatch: # Permite el botón manual
+  schedule:
+    - cron: '0 */5 * * *' # Auto-arranque cada 5 horas para evitar el corte brusco de las 6h
 
 jobs:
   iniciar_servidor:
@@ -15,7 +17,6 @@ jobs:
 
       - name: Descargar el mundo desde Google Drive
         run: |
-          # Se conecta a tu Drive y descarga la carpeta "MinecraftServer"
           rclone copy gdrive:MinecraftServer ./servidor
 
       - name: Instalar y configurar Playit
@@ -38,7 +39,6 @@ jobs:
           playit &
           cd servidor
           echo "eula=true" > eula.txt
-          # Cambia "server.jar" por el nombre de tu archivo si es distinto
           java -Xmx6G -Xms6G -jar server.jar nogui
 
       - name: Guardar todo en Drive al apagar
