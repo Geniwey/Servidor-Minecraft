@@ -19,7 +19,8 @@ jobs:
 
       - name: Descargar el mundo desde Google Drive
         run: |
-          rclone copy gdrive:MinecraftServer ./servidor
+          # Ahora busca tu carpeta real: ZerdolandIII
+          rclone copy gdrive:ZerdolandIII ./servidor
 
       - name: Instalar y configurar Playit
         run: |
@@ -46,4 +47,5 @@ jobs:
       - name: Guardar todo en Drive al apagar
         if: always()
         run: |
-          rclone sync ./servidor gdrive:MinecraftServer
+          # Guarda todo de vuelta en ZerdolandIII
+          rclone sync ./servidor gdrive:ZerdolandIII
