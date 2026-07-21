@@ -23,7 +23,6 @@ jobs:
 
       - name: Descargar el mundo (MÉTODO ULTRA RÁPIDO)
         run: |
-          # Intenta bajar el archivo comprimido. Si no existe (primera vez), baja la carpeta.
           rclone copy gdrive:ZerdolandIII.tar.gz ./ || true
           
           if [ -f "ZerdolandIII.tar.gz" ]; then
@@ -31,8 +30,9 @@ jobs:
             tar -xzf ZerdolandIII.tar.gz
             rm ZerdolandIII.tar.gz
           else
-            echo "No hay archivo comprimido aún. Descargando la carpeta normal por última vez..."
-            rclone copy gdrive:ZerdolandIII ./servidor --transfers 32
+            echo "Descargando la carpeta a velocidad segura para que Google no nos corte la conexión..."
+            # Bajamos las descargas simultáneas a 8 para evitar errores de corrupción
+            rclone copy gdrive:ZerdolandIII ./servidor --transfers 8
           fi
 
       - name: Instalar y configurar Playit
@@ -62,8 +62,7 @@ jobs:
       - name: Guardar todo en Drive (COMPRIMIDO)
         if: always()
         run: |
-          echo "Empaquetando el servidor en un solo archivo..."
+          echo "Empaquetando el servidor en un solo archivo para los próximos arranques..."
           tar -czf ZerdolandIII.tar.gz servidor
-          echo "Subiendo a Google Drive en segundos..."
-          # Sube solo el paquete único a la raíz de tu Drive
+          echo "Subiendo el paquete a Google Drive..."
           rclone copy ZerdolandIII.tar.gz gdrive:
