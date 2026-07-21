@@ -13,11 +13,11 @@ jobs:
   iniciar_servidor:
     runs-on: ubuntu-latest
     steps:
-      - name: Preparar Java (VERSIÓN 17 OBLIGATORIA)
+      - name: Preparar Java (JAVA 21 - LA VERSIÓN CORRECTA)
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '17'
+          java-version: '21'
 
       - name: Instalar Rclone (Conexión a Drive)
         run: |
@@ -33,7 +33,7 @@ jobs:
           rclone copy gdrive:playit.toml ./ || true
           
           if [ -f "ZerdolandIII.tar.gz" ]; then
-            echo "¡Mundo comprimido encontrado! Descomprimiendo..."
+            echo "¡Mundo comprimido encontrado! Descomprimiendo en segundos..."
             tar -xzf ZerdolandIII.tar.gz
             rm ZerdolandIII.tar.gz
           else
@@ -54,22 +54,20 @@ jobs:
             sudo cp playit.toml /etc/playit/playit.toml
           fi
 
-      - name: Arrancar Playit y Servidor (Con Java 17 forzado)
+      - name: Arrancar Playit y Servidor
         run: |
-          # Arranca Playit en segundo plano
+          # Arranca Playit escondido para que no crashee NUNCA MÁS
           sudo playit > playit.log 2>&1 &
           
-          # Espera 10 segundos y muestra el link de Playit
+          # Espera 10 segundos y te suelta el link
           sleep 10
           cat playit.log
           
-          # Entra a la carpeta del servidor y arranca con Java 17
+          # Arranca el servidor de Minecraft de verdad
           cd servidor
           echo "eula=true" > eula.txt
           chmod +x run.sh
-          
-          # Aseguramos que el sistema ejecute run.sh usando Java 17
-          JAVA_HOME=$JAVA_HOME_17_X64 ./run.sh
+          ./run.sh
 
       - name: Guardar todo en Drive (Mundo + Llave de Playit)
         if: always()
@@ -78,11 +76,10 @@ jobs:
           tar -czf ZerdolandIII.tar.gz servidor
           rclone copy ZerdolandIII.tar.gz gdrive:
           
-          echo "Intentando guardar tu llave de Playit..."
+          echo "Guardando tu llave de Playit..."
           sudo cp /etc/playit/playit.toml ./playit.toml || true
           sudo chmod 777 ./playit.toml || true
           
           if [ -f "./playit.toml" ]; then
             rclone copy ./playit.toml gdrive:
-            echo "¡Llave guardada con éxito!"
           fi
