@@ -23,9 +23,7 @@ jobs:
 
       - name: Descargar el mundo y buscar llave
         run: |
-          # Descarga tu mundo súper rápido
           rclone copy gdrive:ZerdolandIII.tar.gz ./ || true
-          # Busca si ya tenemos una llave de Playit guardada de antes
           rclone copy gdrive:playit.toml ./ || true
           
           if [ -f "ZerdolandIII.tar.gz" ]; then
@@ -50,16 +48,22 @@ jobs:
             sudo cp playit.toml /etc/playit/playit.toml
           fi
 
+      - name: Preparar Java (VERSIÓN 17 - CORREGIDO)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
       - name: Arrancar Playit (Modo Invisible) y Servidor
         run: |
-          # Arranca Playit escondido para que NO de RenderError
+          # Arranca Playit escondido
           sudo playit > playit.log 2>&1 &
           
-          # Esperamos 10 segundos y te mostramos el link de confirmación
+          # Te damos 10 segundos para generar el link en la consola
           sleep 10
           cat playit.log
           
-          # Mientras Playit se conecta, arrancamos tu Minecraft
+          # Mientras Playit se conecta, arrancamos el Minecraft con Java 17
           cd servidor
           echo "eula=true" > eula.txt
           chmod +x run.sh
@@ -72,7 +76,13 @@ jobs:
           tar -czf ZerdolandIII.tar.gz servidor
           rclone copy ZerdolandIII.tar.gz gdrive:
           
-          echo "Guardando tu llave de Playit para que no pida más links..."
+          echo "Intentando guardar tu llave de Playit..."
           sudo cp /etc/playit/playit.toml ./playit.toml || true
           sudo chmod 777 ./playit.toml || true
-          rclone copy ./playit.toml gdrive:
+          
+          if [ -f "./playit.toml" ]; then
+            rclone copy ./playit.toml gdrive:
+            echo "¡Llave guardada con éxito!"
+          else
+            echo "No se encontró llave nueva de Playit, ignorando..."
+          fi
