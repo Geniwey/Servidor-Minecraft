@@ -21,10 +21,19 @@ jobs:
           ${{ secrets.RCLONE_CONF }}
           EOF
 
-      - name: Descargar el mundo (MODO TURBO)
+      - name: Descargar el mundo (MÉTODO ULTRA RÁPIDO)
         run: |
-          # Descarga 32 archivos a la vez para reducir el tiempo de espera drásticamente
-          rclone copy gdrive:ZerdolandIII ./servidor --transfers 32 --checkers 32
+          # Intenta bajar el archivo comprimido. Si no existe (primera vez), baja la carpeta.
+          rclone copy gdrive:ZerdolandIII.tar.gz ./ || true
+          
+          if [ -f "ZerdolandIII.tar.gz" ]; then
+            echo "¡Archivo comprimido encontrado! Descomprimiendo a la velocidad de la luz..."
+            tar -xzf ZerdolandIII.tar.gz
+            rm ZerdolandIII.tar.gz
+          else
+            echo "No hay archivo comprimido aún. Descargando la carpeta normal por última vez..."
+            rclone copy gdrive:ZerdolandIII ./servidor --transfers 32
+          fi
 
       - name: Instalar y configurar Playit
         run: |
@@ -34,7 +43,6 @@ jobs:
           sudo apt install playit
           mkdir -p /etc/playit
           
-          # Tu llave inyectada a la fuerza para que no pida links
           echo 'secret_key = "d45e1d084dc1ca477f975cb5ae86765adce450bdae4b303a8d3bc06a22d47164"' | sudo tee /etc/playit/playit.toml
 
       - name: Preparar Java (Versión 21)
@@ -51,8 +59,11 @@ jobs:
           chmod +x run.sh
           ./run.sh
 
-      - name: Guardar todo en Drive al apagar
+      - name: Guardar todo en Drive (COMPRIMIDO)
         if: always()
         run: |
-          # Guarda la copia de seguridad también en modo turbo
-          rclone sync ./servidor gdrive:ZerdolandIII --transfers 32 --checkers 32
+          echo "Empaquetando el servidor en un solo archivo..."
+          tar -czf ZerdolandIII.tar.gz servidor
+          echo "Subiendo a Google Drive en segundos..."
+          # Sube solo el paquete único a la raíz de tu Drive
+          rclone copy ZerdolandIII.tar.gz gdrive:
