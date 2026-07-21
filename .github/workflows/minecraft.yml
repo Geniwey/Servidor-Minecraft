@@ -13,6 +13,12 @@ jobs:
   iniciar_servidor:
     runs-on: ubuntu-latest
     steps:
+      - name: Preparar Java (VERSIÓN 17 OBLIGATORIA)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
       - name: Instalar Rclone (Conexión a Drive)
         run: |
           curl https://rclone.org/install.sh | sudo bash
@@ -27,7 +33,7 @@ jobs:
           rclone copy gdrive:playit.toml ./ || true
           
           if [ -f "ZerdolandIII.tar.gz" ]; then
-            echo "¡Mundo comprimido encontrado! Descomprimiendo en segundos..."
+            echo "¡Mundo comprimido encontrado! Descomprimiendo..."
             tar -xzf ZerdolandIII.tar.gz
             rm ZerdolandIII.tar.gz
           else
@@ -48,26 +54,22 @@ jobs:
             sudo cp playit.toml /etc/playit/playit.toml
           fi
 
-      - name: Preparar Java (VERSIÓN 17 - CORREGIDO)
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-
-      - name: Arrancar Playit (Modo Invisible) y Servidor
+      - name: Arrancar Playit y Servidor (Con Java 17 forzado)
         run: |
-          # Arranca Playit escondido
+          # Arranca Playit en segundo plano
           sudo playit > playit.log 2>&1 &
           
-          # Te damos 10 segundos para generar el link en la consola
+          # Espera 10 segundos y muestra el link de Playit
           sleep 10
           cat playit.log
           
-          # Mientras Playit se conecta, arrancamos el Minecraft con Java 17
+          # Entra a la carpeta del servidor y arranca con Java 17
           cd servidor
           echo "eula=true" > eula.txt
           chmod +x run.sh
-          ./run.sh
+          
+          # Aseguramos que el sistema ejecute run.sh usando Java 17
+          JAVA_HOME=$JAVA_HOME_17_X64 ./run.sh
 
       - name: Guardar todo en Drive (Mundo + Llave de Playit)
         if: always()
@@ -83,6 +85,4 @@ jobs:
           if [ -f "./playit.toml" ]; then
             rclone copy ./playit.toml gdrive:
             echo "¡Llave guardada con éxito!"
-          else
-            echo "No se encontró llave nueva de Playit, ignorando..."
           fi
