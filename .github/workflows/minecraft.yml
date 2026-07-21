@@ -21,9 +21,10 @@ jobs:
           ${{ secrets.RCLONE_CONF }}
           EOF
 
-      - name: Descargar el mundo desde Google Drive
+      - name: Descargar el mundo (MODO TURBO)
         run: |
-          rclone copy gdrive:ZerdolandIII ./servidor
+          # Descarga 32 archivos a la vez para reducir el tiempo de espera drásticamente
+          rclone copy gdrive:ZerdolandIII ./servidor --transfers 32 --checkers 32
 
       - name: Instalar y configurar Playit
         run: |
@@ -33,7 +34,7 @@ jobs:
           sudo apt install playit
           mkdir -p /etc/playit
           
-          # TU LLAVE INYECTADA DIRECTAMENTE
+          # Tu llave inyectada a la fuerza para que no pida links
           echo 'secret_key = "d45e1d084dc1ca477f975cb5ae86765adce450bdae4b303a8d3bc06a22d47164"' | sudo tee /etc/playit/playit.toml
 
       - name: Preparar Java (Versión 21)
@@ -53,4 +54,5 @@ jobs:
       - name: Guardar todo en Drive al apagar
         if: always()
         run: |
-          rclone sync ./servidor gdrive:ZerdolandIII
+          # Guarda la copia de seguridad también en modo turbo
+          rclone sync ./servidor gdrive:ZerdolandIII --transfers 32 --checkers 32
