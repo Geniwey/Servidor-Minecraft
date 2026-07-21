@@ -5,6 +5,12 @@ on:
   schedule:
     - cron: '0 */5 * * *'
 
+# ¡MAGIA NUEVA! Esto prohíbe que haya 2 servidores encendidos a la vez.
+# Si entra uno nuevo, apaga el viejo automáticamente.
+concurrency:
+  group: servidor-minecraft
+  cancel-in-progress: true
+
 jobs:
   iniciar_servidor:
     runs-on: ubuntu-latest
