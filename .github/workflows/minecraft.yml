@@ -5,8 +5,6 @@ on:
   schedule:
     - cron: '0 */5 * * *'
 
-# ¡MAGIA NUEVA! Esto prohíbe que haya 2 servidores encendidos a la vez.
-# Si entra uno nuevo, apaga el viejo automáticamente.
 concurrency:
   group: servidor-minecraft
   cancel-in-progress: true
@@ -34,7 +32,9 @@ jobs:
           sudo apt update
           sudo apt install playit
           mkdir -p /etc/playit
-          echo "secret_key = \"${{ secrets.PLAYIT_SECRET }}\"" | sudo tee /etc/playit/playit.toml
+          
+          # TU LLAVE INYECTADA DIRECTAMENTE
+          echo 'secret_key = "d45e1d084dc1ca477f975cb5ae86765adce450bdae4b303a8d3bc06a22d47164"' | sudo tee /etc/playit/playit.toml
 
       - name: Preparar Java (Versión 21)
         uses: actions/setup-java@v4
