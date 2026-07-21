@@ -21,17 +21,19 @@ jobs:
           ${{ secrets.RCLONE_CONF }}
           EOF
 
-      - name: Descargar el mundo (MÉTODO ULTRA RÁPIDO)
+      - name: Descargar el mundo y buscar llave
         run: |
+          # Descarga tu mundo súper rápido
           rclone copy gdrive:ZerdolandIII.tar.gz ./ || true
+          # Busca si ya tenemos una llave de Playit guardada de antes
+          rclone copy gdrive:playit.toml ./ || true
           
           if [ -f "ZerdolandIII.tar.gz" ]; then
-            echo "¡Archivo comprimido encontrado! Descomprimiendo a la velocidad de la luz..."
+            echo "¡Mundo comprimido encontrado! Descomprimiendo en segundos..."
             tar -xzf ZerdolandIII.tar.gz
             rm ZerdolandIII.tar.gz
           else
-            echo "Descargando la carpeta a velocidad segura para que Google no nos corte la conexión..."
-            # Bajamos las descargas simultáneas a 8 para evitar errores de corrupción
+            echo "Descargando la carpeta normal..."
             rclone copy gdrive:ZerdolandIII ./servidor --transfers 8
           fi
 
@@ -41,28 +43,36 @@ jobs:
           echo "deb [signed-by=/etc/apt/trusted.gpg.d/playit.gpg] https://playit-cloud.github.io/ppa/data ./" | sudo tee /etc/apt/sources.list.d/playit-cloud.list
           sudo apt update
           sudo apt install playit
-          mkdir -p /etc/playit
+          sudo mkdir -p /etc/playit
           
-          echo 'secret_key = "d45e1d084dc1ca477f975cb5ae86765adce450bdae4b303a8d3bc06a22d47164"' | sudo tee /etc/playit/playit.toml
+          if [ -f "playit.toml" ]; then
+            echo "¡Llave de Playit cargada desde tu Google Drive!"
+            sudo cp playit.toml /etc/playit/playit.toml
+          fi
 
-      - name: Preparar Java (Versión 21)
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '21'
-
-      - name: Arrancar Playit y el Servidor
+      - name: Arrancar Playit (Modo Invisible) y Servidor
         run: |
-          sudo playit &
+          # Arranca Playit escondido para que NO de RenderError
+          sudo playit > playit.log 2>&1 &
+          
+          # Esperamos 10 segundos y te mostramos el link de confirmación
+          sleep 10
+          cat playit.log
+          
+          # Mientras Playit se conecta, arrancamos tu Minecraft
           cd servidor
           echo "eula=true" > eula.txt
           chmod +x run.sh
           ./run.sh
 
-      - name: Guardar todo en Drive (COMPRIMIDO)
+      - name: Guardar todo en Drive (Mundo + Llave de Playit)
         if: always()
         run: |
-          echo "Empaquetando el servidor en un solo archivo para los próximos arranques..."
+          echo "Empaquetando el servidor..."
           tar -czf ZerdolandIII.tar.gz servidor
-          echo "Subiendo el paquete a Google Drive..."
           rclone copy ZerdolandIII.tar.gz gdrive:
+          
+          echo "Guardando tu llave de Playit para que no pida más links..."
+          sudo cp /etc/playit/playit.toml ./playit.toml || true
+          sudo chmod 777 ./playit.toml || true
+          rclone copy ./playit.toml gdrive:
