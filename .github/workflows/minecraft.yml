@@ -51,25 +51,33 @@ jobs:
             sudo cp playit.toml /etc/playit/playit.toml
           fi
 
-      - name: Arrancar Playit y Extraer IP (MODO PANTALLA PRINCIPAL)
+      - name: Arrancar Playit y Servidor
         run: |
+          # 1. Arranca Playit en segundo plano
           sudo playit > playit.log 2>&1 &
-          sleep 20
           
-          LINK_CLAIM=$(grep -oE 'https://playit.gg/claim/[a-zA-Z0-9]+' playit.log | head -n 1 || true)
-          IP_TEXTO=$(grep -oE '[a-zA-Z0-9-]+\.(gl\.joinmc\.link|auto\.playit\.gg)' playit.log | head -n 1 || true)
-          IP_NUMEROS=$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+:[0-9]+' playit.log | grep -v "127.0.0.1" | head -n 1 || true)
-
-          # ESTO SACA LA IP FUERA DE LA CAJA NEGRA
-          echo "### 🚀 CONEXIÓN DE ZERDOLAND III" >> $GITHUB_STEP_SUMMARY
-          if [ -n "$LINK_CLAIM" ]; then
-            echo "**⚠️ Requiere activación:** [Haz clic aquí para vincular Playit]($LINK_CLAIM)" >> $GITHUB_STEP_SUMMARY
-          fi
-          echo "- **IP de letras:** \`$IP_TEXTO\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **IP de números:** \`$IP_NUMEROS\`" >> $GITHUB_STEP_SUMMARY
-
-      - name: Arrancar Servidor de Minecraft
-        run: |
+          # 2. EL MEGÁFONO: Imprime la IP directamente en la consola negra cada 30 segundos
+          (
+            while true; do
+              LINK=$(grep -oE 'https://playit.gg/claim/[a-zA-Z0-9]+' playit.log | head -n 1 || true)
+              IP=$(grep -oE '[a-zA-Z0-9-]+\.(gl\.joinmc\.link|auto\.playit\.gg)' playit.log | head -n 1 || true)
+              
+              echo ""
+              echo "🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴"
+              if [ -n "$LINK" ]; then
+                echo "⚠️ FALTA VINCULAR PLAYIT. CLICA AQUÍ YA: $LINK"
+              elif [ -n "$IP" ]; then
+                echo "✅ TU IP PARA EL MINECRAFT ES: $IP"
+              else
+                echo "⏳ Esperando a que Playit despierte..."
+              fi
+              echo "🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴"
+              echo ""
+              sleep 30
+            done
+          ) &
+          
+          # 3. Arranca Minecraft
           cd servidor
           echo "eula=true" > eula.txt
           chmod +x run.sh
