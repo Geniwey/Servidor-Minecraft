@@ -33,11 +33,9 @@ jobs:
           rclone copy gdrive:playit.toml ./ || true
           
           if [ -f "ZerdolandIII.tar.gz" ]; then
-            echo "¡Mundo comprimido encontrado! Descomprimiendo en segundos..."
             tar -xzf ZerdolandIII.tar.gz
             rm ZerdolandIII.tar.gz
           else
-            echo "Descargando la carpeta normal..."
             rclone copy gdrive:ZerdolandIII ./servidor --transfers 8
           fi
 
@@ -50,56 +48,38 @@ jobs:
           sudo mkdir -p /etc/playit
           
           if [ -f "playit.toml" ]; then
-            echo "Cargando tu llave guardada de Playit..."
             sudo cp playit.toml /etc/playit/playit.toml
           fi
 
-      - name: Arrancar Playit y Servidor (MODO RADAR AUTOMÁTICO)
+      - name: Arrancar Playit y Extraer IP (MODO PANTALLA PRINCIPAL)
         run: |
-          # Arrancamos Playit escondido
           sudo playit > playit.log 2>&1 &
-          
-          echo "🤖 Escaneando los servidores de Playit en busca de tu IP..."
-          # Esperamos 20 segundos mágicos para que la conexión se establezca
           sleep 20
           
-          # El escáner extrae los datos directamente del log para que no tengas que buscar
           LINK_CLAIM=$(grep -oE 'https://playit.gg/claim/[a-zA-Z0-9]+' playit.log | head -n 1 || true)
           IP_TEXTO=$(grep -oE '[a-zA-Z0-9-]+\.(gl\.joinmc\.link|auto\.playit\.gg)' playit.log | head -n 1 || true)
           IP_NUMEROS=$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+:[0-9]+' playit.log | grep -v "127.0.0.1" | head -n 1 || true)
 
-          echo "=================================================================="
-          echo "                   🚀 CARTEL VIP DE CONEXIÓN 🚀                   "
-          echo "=================================================================="
+          # ESTO SACA LA IP FUERA DE LA CAJA NEGRA
+          echo "### 🚀 CONEXIÓN DE ZERDOLAND III" >> $GITHUB_STEP_SUMMARY
           if [ -n "$LINK_CLAIM" ]; then
-            echo "⚠️ PLAYIT ESTÁ ESPERANDO TU CONFIRMACIÓN:"
-            echo "Haz clic en este link para activar: $LINK_CLAIM"
-            echo "------------------------------------------------------------------"
+            echo "**⚠️ Requiere activación:** [Haz clic aquí para vincular Playit]($LINK_CLAIM)" >> $GITHUB_STEP_SUMMARY
           fi
-          
-          if [ -n "$IP_TEXTO" ] || [ -n "$IP_NUMEROS" ]; then
-            echo "✅ ¡TODO LISTO! Copia esto y pégalo en tu Minecraft:"
-            [ -n "$IP_TEXTO" ] && echo "👉 Tu IP principal: $IP_TEXTO"
-            [ -n "$IP_NUMEROS" ] && echo "👉 Tu IP numérica: $IP_NUMEROS"
-          else
-            echo "⏳ Todavía conectando... Si sale vacío, revisa la web de Playit."
-          fi
-          echo "=================================================================="
-          
-          # Arrancamos el servidor de Minecraft
+          echo "- **IP de letras:** \`$IP_TEXTO\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **IP de números:** \`$IP_NUMEROS\`" >> $GITHUB_STEP_SUMMARY
+
+      - name: Arrancar Servidor de Minecraft
+        run: |
           cd servidor
           echo "eula=true" > eula.txt
           chmod +x run.sh
           ./run.sh
 
-      - name: Guardar todo en Drive (Mundo + Llave de Playit)
+      - name: Guardar todo en Drive
         if: always()
         run: |
-          echo "Empaquetando el servidor..."
           tar -czf ZerdolandIII.tar.gz servidor
           rclone copy ZerdolandIII.tar.gz gdrive:
-          
-          echo "Guardando tu llave de Playit..."
           sudo cp /etc/playit/playit.toml ./playit.toml || true
           sudo chmod 777 ./playit.toml || true
           
