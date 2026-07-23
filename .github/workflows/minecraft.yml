@@ -29,8 +29,8 @@ jobs:
 
       - name: Descargar el mundo y llave
         run: |
-          rclone copy gdrive:ZerdolandIII.tar.gz ./ || true
           rclone copy gdrive:playit.toml ./ || true
+          rclone copy gdrive:ZerdolandIII.tar.gz ./ || true
           
           if [ -f "ZerdolandIII.tar.gz" ]; then
             tar -xzf ZerdolandIII.tar.gz
@@ -49,27 +49,35 @@ jobs:
           
           if [ -f "playit.toml" ]; then
             sudo cp playit.toml /etc/playit/playit.toml
+            sudo chmod 777 /etc/playit/playit.toml
           fi
 
       - name: Arrancar Playit y Servidor
         run: |
-          # Arranca Playit en segundo plano
           sudo playit > playit.log 2>&1 &
           
-          # EL MEGÁFONO (con el error de Broken Pipe arreglado)
+          # EL AUTO-GUARDADO EN VIVO
           (
             while true; do
               LINK=$(grep -m 1 -oE 'https://playit.gg/claim/[a-zA-Z0-9]+' playit.log || true)
               IP=$(grep -m 1 -oE '[a-zA-Z0-9-]+\.(gl\.joinmc\.link|auto\.playit\.gg)' playit.log || true)
               
+              # LA MAGIA: Fuerza la subida a Drive cada 30 segundos
+              if [ -f "/etc/playit/playit.toml" ]; then
+                 sudo cp /etc/playit/playit.toml ./playit.toml || true
+                 sudo chmod 777 ./playit.toml || true
+                 rclone copy ./playit.toml gdrive: || true
+              fi
+              
               echo ""
               echo "🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴"
-              if [ -n "$LINK" ]; then
+              if [ -n "$IP" ]; then
+                echo "✅ TU IP: $IP"
+                echo "💾 (Tu llave se está guardando en Drive automáticamente)"
+              elif [ -n "$LINK" ]; then
                 echo "⚠️ FALTA VINCULAR PLAYIT. CLICA AQUÍ YA: $LINK"
-              elif [ -n "$IP" ]; then
-                echo "✅ TU IP PARA EL MINECRAFT ES: $IP"
               else
-                echo "⏳ Esperando a que Playit despierte..."
+                echo "⏳ Esperando..."
               fi
               echo "🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴"
               echo ""
@@ -77,23 +85,14 @@ jobs:
             done
           ) &
           
-          # Arranca Minecraft
           cd servidor
           echo "eula=true" > eula.txt
           chmod +x run.sh
           ./run.sh
 
-      - name: Guardar todo en Drive (LLAVE PRIMERO)
+      - name: Guardar mundo en Drive
         if: always()
         run: |
-          echo "Guardando tu llave de Playit PRIMERO para asegurar la IP..."
-          sudo cp /etc/playit/playit.toml ./playit.toml || true
-          sudo chmod 777 ./playit.toml || true
-          
-          if [ -f "./playit.toml" ]; then
-            rclone copy ./playit.toml gdrive:
-          fi
-          
           echo "Empaquetando el servidor..."
           tar -czf ZerdolandIII.tar.gz servidor
           rclone copy ZerdolandIII.tar.gz gdrive:
