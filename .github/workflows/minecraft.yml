@@ -53,14 +53,14 @@ jobs:
 
       - name: Arrancar Playit y Servidor
         run: |
-          # 1. Arranca Playit en segundo plano
+          # Arranca Playit en segundo plano
           sudo playit > playit.log 2>&1 &
           
-          # 2. EL MEGÁFONO: Imprime la IP directamente en la consola negra cada 30 segundos
+          # EL MEGÁFONO (con el error de Broken Pipe arreglado)
           (
             while true; do
-              LINK=$(grep -oE 'https://playit.gg/claim/[a-zA-Z0-9]+' playit.log | head -n 1 || true)
-              IP=$(grep -oE '[a-zA-Z0-9-]+\.(gl\.joinmc\.link|auto\.playit\.gg)' playit.log | head -n 1 || true)
+              LINK=$(grep -m 1 -oE 'https://playit.gg/claim/[a-zA-Z0-9]+' playit.log || true)
+              IP=$(grep -m 1 -oE '[a-zA-Z0-9-]+\.(gl\.joinmc\.link|auto\.playit\.gg)' playit.log || true)
               
               echo ""
               echo "🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴"
@@ -77,20 +77,23 @@ jobs:
             done
           ) &
           
-          # 3. Arranca Minecraft
+          # Arranca Minecraft
           cd servidor
           echo "eula=true" > eula.txt
           chmod +x run.sh
           ./run.sh
 
-      - name: Guardar todo en Drive
+      - name: Guardar todo en Drive (LLAVE PRIMERO)
         if: always()
         run: |
-          tar -czf ZerdolandIII.tar.gz servidor
-          rclone copy ZerdolandIII.tar.gz gdrive:
+          echo "Guardando tu llave de Playit PRIMERO para asegurar la IP..."
           sudo cp /etc/playit/playit.toml ./playit.toml || true
           sudo chmod 777 ./playit.toml || true
           
           if [ -f "./playit.toml" ]; then
             rclone copy ./playit.toml gdrive:
           fi
+          
+          echo "Empaquetando el servidor..."
+          tar -czf ZerdolandIII.tar.gz servidor
+          rclone copy ZerdolandIII.tar.gz gdrive:
