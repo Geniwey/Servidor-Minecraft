@@ -28,15 +28,15 @@ jobs:
           ${{ secrets.RCLONE_CONF }}
           EOF
 
-      - name: Descargar el mundo y llave Playit
+      - name: Descargar el mundo y llave
         run: |
-          # 1. Crear la ruta normal del usuario SIN SUDO
+          # 1. Crear carpeta normal del usuario
           mkdir -p ~/.config/playit
           
-          # 2. Descargar directo a la carpeta de playit
+          # 2. Descargar llave si existe en Drive (como lo borraste, bajará nada)
           rclone copy gdrive:playit.toml ~/.config/playit/ || true
           
-          # 3. Descargar mundo
+          # 3. Descargar el mundo
           rclone copy gdrive:ZerdolandIII.tar.gz ./ || true
           if [ -f "ZerdolandIII.tar.gz" ]; then
             tar -xzf ZerdolandIII.tar.gz
@@ -45,17 +45,16 @@ jobs:
             rclone copy gdrive:ZerdolandIII ./servidor --transfers 8 || true
           fi
 
-      - name: Instalar Playit
+      - name: Descargar Playit (Versión Portátil)
         run: |
-          curl -SsL https://playit-cloud.github.io/ppa/key.gpg | gpg --dearmor | sudo tee /etc/apt/trusted.gpg.d/playit.gpg >/dev/null
-          echo "deb [signed-by=/etc/apt/trusted.gpg.d/playit.gpg] https://playit-cloud.github.io/ppa/data ./" | sudo tee /etc/apt/sources.list.d/playit-cloud.list
-          sudo apt update
-          sudo apt install playit
+          # LA SOLUCIÓN: Descargar el ejecutable suelto en vez de instalarlo en el sistema
+          curl -SsL -o playit https://github.com/playit-cloud/playit-agent/releases/latest/download/playit-linux-amd64
+          chmod +x playit
 
       - name: Arrancar Playit y Servidor
         run: |
-          # ARRANCAMOS PLAYIT COMO USUARIO NORMAL (SIN SUDO)
-          playit > playit.log 2>&1 &
+          # Arrancamos nuestra versión portátil
+          ./playit > playit.log 2>&1 &
           
           (
             LLAVE_GUARDADA=false
@@ -67,7 +66,7 @@ jobs:
                  ESTADO="FALTA"
               fi
               
-              LINK=$(grep -m 1 -oE 'https://playit.gg/claim/[a-zA-Z0-9-]+' playit.log || true)
+              LINK=$(grep -m 1 -oE 'https://playit.gg/claim/[a-zA-Z0-9]+' playit.log || true)
               IP=$(grep -m 1 -oE '[a-zA-Z0-9-]+\.(gl\.joinmc\.link|auto\.playit\.gg)' playit.log || true)
               
               echo ""
@@ -76,10 +75,10 @@ jobs:
                 if [ -n "$IP" ]; then
                   echo "✅ SERVIDOR ACTIVO. TU IP: $IP"
                 else
-                  echo "✅ AGENTE VINCULADO CON ÉXITO."
+                  echo "✅ AGENTE VINCULADO. Procesando IP en la nube..."
                 fi
                 
-                # GUARDAR EN DRIVE (sin problemas de permisos)
+                # Guardado en Drive
                 if [ "$LLAVE_GUARDADA" = false ]; then
                   echo "💾 Guardando llave vinculada en Drive..."
                   cp ~/.config/playit/playit.toml ./playit.toml
@@ -94,6 +93,9 @@ jobs:
                 echo "⚠️ FALTA VINCULAR PLAYIT. CLICA AQUÍ YA: $LINK"
               else
                 echo "⏳ Iniciando túnel..."
+                # EL CHIVATO: Si Playit se atasca, nos dirá por qué exactamente
+                echo "   [Mensaje interno de Playit:]"
+                cat playit.log | tail -n 2
               fi
               echo "🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴"
               echo ""
@@ -113,7 +115,6 @@ jobs:
           tar -czf ZerdolandIII.tar.gz servidor
           rclone copy ZerdolandIII.tar.gz gdrive: || true
           
-          # Seguro final sin sudo
           if test -f ~/.config/playit/playit.toml; then
             cp ~/.config/playit/playit.toml ./playit.toml
             rclone copy ./playit.toml gdrive: || true
