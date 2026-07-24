@@ -30,13 +30,9 @@ jobs:
 
       - name: Descargar el mundo y llave
         run: |
-          # 1. Crear la ruta EXACTA que pide la versión portátil (_gg)
           mkdir -p ~/.config/playit_gg
-          
-          # 2. Descargar llave
           rclone copy gdrive:playit.toml ~/.config/playit_gg/ || true
           
-          # 3. Descargar mundo
           rclone copy gdrive:ZerdolandIII.tar.gz ./ || true
           if [ -f "ZerdolandIII.tar.gz" ]; then
             tar -xzf ZerdolandIII.tar.gz
@@ -52,12 +48,16 @@ jobs:
 
       - name: Arrancar Playit y Servidor
         run: |
+          # EL PARCHE DEFINITIVO: Le creamos las carpetas temporales para que no llore
+          export XDG_RUNTIME_DIR=/tmp
+          sudo mkdir -p /run/user/$(id -u)
+          sudo chmod 777 /run/user/$(id -u)
+          
           ./playit > playit.log 2>&1 &
           
           (
             LLAVE_GUARDADA=false
             while true; do
-              # Leer de la carpeta correcta (_gg)
               if grep -q "secret" ~/.config/playit_gg/playit.toml 2>/dev/null; then
                  ESTADO="VINCULADO"
               else
@@ -76,7 +76,6 @@ jobs:
                   echo "✅ AGENTE VINCULADO. Procesando IP en la nube..."
                 fi
                 
-                # Guardar en Drive desde la carpeta _gg
                 if [ "$LLAVE_GUARDADA" = false ]; then
                   echo "💾 Guardando llave vinculada en Drive..."
                   cp ~/.config/playit_gg/playit.toml ./playit.toml
