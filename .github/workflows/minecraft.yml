@@ -30,9 +30,17 @@ jobs:
 
       - name: Descargar el mundo y llave
         run: |
-          mkdir -p ~/.config/playit_gg
-          rclone copy gdrive:playit.toml ~/.config/playit_gg/ || true
+          # 1. Crear la ruta secreta del administrador
+          sudo mkdir -p /root/.config/playit_gg
           
+          # 2. Descargar llave
+          rclone copy gdrive:playit.toml ./ || true
+          if [ -f "playit.toml" ]; then
+            sudo cp playit.toml /root/.config/playit_gg/playit.toml
+            sudo chmod 777 /root/.config/playit_gg/playit.toml
+          fi
+          
+          # 3. Descargar mundo
           rclone copy gdrive:ZerdolandIII.tar.gz ./ || true
           if [ -f "ZerdolandIII.tar.gz" ]; then
             tar -xzf ZerdolandIII.tar.gz
@@ -48,23 +56,19 @@ jobs:
 
       - name: Arrancar Playit y Servidor
         run: |
-          # EL PARCHE DEFINITIVO: Le creamos las carpetas temporales para que no llore
-          export XDG_RUNTIME_DIR=/tmp
-          sudo mkdir -p /run/user/$(id -u)
-          sudo chmod 777 /run/user/$(id -u)
-          
-          ./playit > playit.log 2>&1 &
+          # EL GOLPE MAESTRO: Portátil pero con SUDO. Permisos absolutos.
+          sudo ./playit > playit.log 2>&1 &
           
           (
             LLAVE_GUARDADA=false
             while true; do
-              if grep -q "secret" ~/.config/playit_gg/playit.toml 2>/dev/null; then
+              if sudo grep -q "secret" /root/.config/playit_gg/playit.toml 2>/dev/null; then
                  ESTADO="VINCULADO"
               else
                  ESTADO="FALTA"
               fi
               
-              LINK=$(grep -m 1 -oE 'https://playit.gg/claim/[a-zA-Z0-9]+' playit.log || true)
+              LINK=$(grep -m 1 -oE 'https://playit.gg/claim/[a-zA-Z0-9-]+' playit.log || true)
               IP=$(grep -m 1 -oE '[a-zA-Z0-9-]+\.(gl\.joinmc\.link|auto\.playit\.gg)' playit.log || true)
               
               echo ""
@@ -78,7 +82,8 @@ jobs:
                 
                 if [ "$LLAVE_GUARDADA" = false ]; then
                   echo "💾 Guardando llave vinculada en Drive..."
-                  cp ~/.config/playit_gg/playit.toml ./playit.toml
+                  sudo cp /root/.config/playit_gg/playit.toml ./playit.toml
+                  sudo chmod 777 ./playit.toml
                   if rclone copy ./playit.toml gdrive: ; then
                     echo "✅ ¡LLAVE GUARDADA DEFINITIVAMENTE!"
                     LLAVE_GUARDADA=true
@@ -111,7 +116,8 @@ jobs:
           tar -czf ZerdolandIII.tar.gz servidor
           rclone copy ZerdolandIII.tar.gz gdrive: || true
           
-          if test -f ~/.config/playit_gg/playit.toml; then
-            cp ~/.config/playit_gg/playit.toml ./playit.toml
+          if sudo test -f /root/.config/playit_gg/playit.toml; then
+            sudo cp /root/.config/playit_gg/playit.toml ./playit.toml
+            sudo chmod 777 ./playit.toml
             rclone copy ./playit.toml gdrive: || true
           fi
