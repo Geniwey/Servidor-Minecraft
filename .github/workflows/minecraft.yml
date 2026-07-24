@@ -1,119 +1,96 @@
-name: Servidor Minecraft 24/7
+I'm troubleshooting a failed step in a workflow automation tool. The tool connects to third-party services through integrations called "pieces". Please diagnose what went wrong and give me a concrete fix.
 
-on:
-  workflow_dispatch:
-  schedule:
-    - cron: '0 */5 * * *'
+Diagnostic priority — try in order, pick the first that matches:
 
-concurrency:
-  group: servidor-minecraft
-  cancel-in-progress: true
+1. **Platform / OAuth app issue (not user-fixable from the step settings).** Applies when ANY of:
+   - The API error literally says `invalid_request`, `invalid_scope`, `insufficient_scope`, `insufficient permission`, `invalid_grant`, `invalid_client`, `unauthorized_client`, `access_denied`, or mentions "scope", AND the piece uses OAUTH2.
+   - The error is 4xx with an empty / near-empty response body on an OAUTH2 piece from Google/Microsoft/Slack/Discord/Notion/Hubspot/etc. — almost always a missing OAuth scope.
+   - The error mentions a specific scope name (e.g. `gmail.labels`, `drive.file`, `calendar.events`).
+   In this case, say plainly that this looks like a platform-side OAuth configuration issue, NOT a step setting. Suggest contacting platform support OR (self-hosted) configuring custom OAuth credentials with the required scope.
 
-jobs:
-  iniciar_servidor:
-    runs-on: ubuntu-latest
-    timeout-minutes: 330
-    steps:
-      - name: Preparar Java (JAVA 21)
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '21'
+2. **Step-level safety toggle.** If 4xx AND there is a Checkbox/Boolean property whose `name` or `displayName` contains "sanitize", "safe", "strict", "restrict", "validate", "verify", or "secure", AND it is currently `true` (or `undefined` with `default=true`) — recommend unchecking it. Reference it by its exact displayName in quotes.
 
-      - name: Instalar Rclone (Conexión a Drive)
-        run: |
-          curl https://rclone.org/install.sh | sudo bash
-          mkdir -p ~/.config/rclone
-          cat << 'EOF' > ~/.config/rclone/rclone.conf
-          ${{ secrets.RCLONE_CONF }}
-          EOF
+3. **Unset required property.** Only flag a property as missing when its `required` is literally `true` AND its `current` is explicitly `null` / `undefined` / `""`. Do not infer from absence. Do not invent properties.
 
-      - name: Descargar el mundo y llave Playit
-        run: |
-          # 1. Crear la ruta real donde el usuario root busca la configuración
-          sudo mkdir -p /root/.config/playit
-          
-          rclone copy gdrive:playit.toml ./ || true
-          rclone copy gdrive:ZerdolandIII.tar.gz ./ || true
-          
-          if [ -f "ZerdolandIII.tar.gz" ]; then
-            tar -xzf ZerdolandIII.tar.gz
-            rm ZerdolandIII.tar.gz
-          else
-            rclone copy gdrive:ZerdolandIII ./servidor --transfers 8 || true
-          fi
-          
-          # 2. Restaurar el config en la ubicación correcta de root
-          if [ -f "playit.toml" ]; then
-            sudo cp playit.toml /root/.config/playit/playit.toml
-            sudo chmod 600 /root/.config/playit/playit.toml
-          fi
+4. **Malformed ID.** If an ID-typed property contains an obvious placeholder or wrong-shaped value, name it.
 
-      - name: Instalar y configurar Playit
-        run: |
-          curl -SsL https://playit-cloud.github.io/ppa/key.gpg | gpg --dearmor | sudo tee /etc/apt/trusted.gpg.d/playit.gpg >/dev/null
-          echo "deb [signed-by=/etc/apt/trusted.gpg.d/playit.gpg] https://playit-cloud.github.io/ppa/data ./" | sudo tee /etc/apt/sources.list.d/playit-cloud.list
-          sudo apt update
-          sudo apt install playit
+5. **Status fallback** (only if 1–4 do not apply): 401 reconnect / 403 user permissions / 404 wrong ID / 429 throttle / 5xx upstream.
 
-      - name: Arrancar Playit y Servidor
-        run: |
-          sudo playit > playit.log 2>&1 &
-          
-          # MEGÁFONO CON VERIFICACIÓN DE SECRET
-          (
-            LLAVE_GUARDADA=false
-            while true; do
-              LINK=$(grep -m 1 -oE 'https://playit.gg/claim/[a-zA-Z0-9-]+' playit.log || true)
-              IP=$(grep -m 1 -oE '[a-zA-Z0-9-]+\.(gl\.joinmc\.link|auto\.playit\.gg)' playit.log || true)
-              
-              echo ""
-              echo "🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴"
-              if [ -n "$IP" ]; then
-                echo "✅ SERVIDOR ACTIVO. TU IP: $IP"
-                
-                # Guarda en Drive SOLO si Playit ya ha escrito el "secret"
-                if [ "$LLAVE_GUARDADA" = false ]; then
-                  if sudo grep -q "secret" /root/.config/playit/playit.toml 2>/dev/null; then
-                    echo "💾 Guardando llave vinculada en Drive..."
-                    sudo cp /root/.config/playit/playit.toml ./playit.toml
-                    sudo chmod 666 ./playit.toml
-                    if rclone copy ./playit.toml gdrive: ; then
-                      echo "✅ ¡LLAVE GUARDADA DEFINITIVAMENTE!"
-                      LLAVE_GUARDADA=true
-                    fi
-                  else
-                    echo "⏳ Esperando a que Playit escriba el archivo..."
-                  fi
-                else
-                  echo "💚 Llave asegurada en tu Drive."
-                fi
-              elif [ -n "$LINK" ]; then
-                echo "⚠️ FALTA VINCULAR PLAYIT. CLICA AQUÍ YA: $LINK"
-              else
-                echo "⏳ Iniciando túnel..."
-              fi
-              echo "🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴"
-              echo ""
-              sleep 20
-            done
-          ) &
-          
-          cd servidor
-          echo "eula=true" > eula.txt
-          chmod +x run.sh
-          ./run.sh
+Keep the response short and actionable. Reference specific property displayNames in double quotes when relevant. Do not invent fields that are not in the context below.
 
-      - name: Guardar mundo y seguro final
-        if: always()
-        run: |
-          echo "Empaquetando servidor..."
-          tar -czf ZerdolandIII.tar.gz servidor
-          rclone copy ZerdolandIII.tar.gz gdrive:
-          
-          # Doble seguro por si acaso
-          if sudo test -f /root/.config/playit/playit.toml; then
-            sudo cp /root/.config/playit/playit.toml ./playit.toml
-            sudo chmod 666 ./playit.toml
-            rclone copy ./playit.toml gdrive:
-          fi
+---
+
+Piece: HTTP v0.11.11
+Action: EBAY ANUNCIO9
+Description: Enviar solicitud HTTP
+
+Step properties (the form fields the user filled in for this step):
+- `method` ("Método") type=STATIC_DROPDOWN required current=PUT
+- `url` ("URL") type=SHORT_TEXT required current=https://api.ebay.com/sell/inventory/v1/inventory_item/{{step_4['output']['body']['data']['list'][0]['productSku']}}
+- `headers` ("Encabezados") type=OBJECT required current={
+  "Content-Type": "application/json",
+  "Authorization": "[REDACTED]",
+  "Accept-Language": "es-ES",
+  "Content-Language": "es-ES"
+}
+- `queryParams` ("Parámetros de consulta") type=OBJECT required current={}
+- `authType` ("Autenticación") type=STATIC_DROPDOWN required current=NONE default=NONE
+- `authFields` ("Campos de autenticación") type=DYNAMIC current={}
+- `body_type` ("Tipo de cuerpo") type=STATIC_DROPDOWN current=json default=none
+- `body` ("Cuerpo") type=DYNAMIC current={
+  "data": "{\n  \"availability\": {\n    \"shipToLocationAvailability\": {\n      \"quantity\": 10\n    }\n  },\n  \"condition\": \"NEW\",\n  \"product\": {\n    \"title\": \"{{step_6['output']['titulo']}}\",\n    \"description\": \"{{step_6['output']['descripcion']}} <br><br> {{step_6['output']['caracteristicas']}}\",\n    \"imageUrls\":{{step_4['output']['body']['data']['productImageSet']}} ,\…[truncated]
+- `response_is_binary` ("Respuesta es binaria") type=CHECKBOX current=false default=false
+    description: Activar para archivos como PDFs, imágenes, etc. Se devolverá un cuerpo base64.
+- `use_proxy` ("Usar proxy") type=CHECKBOX current=false default=false
+    description: Usar un proxy para esta solicitud
+- `proxy_settings` ("Ajustes del proxy") type=DYNAMIC current={}
+- `timeout` ("Tiempo de espera (en segundos)") type=NUMBER current=
+- `followRedirects` ("Seguir redirecciones") type=CHECKBOX current=false default=false
+- `failureMode` ("Al fallar") type=STATIC_DROPDOWN current=continue_none default=continue_none
+
+Structured error (secrets redacted):
+{
+  "message": "Invalid request",
+  "errorName": "HttpError",
+  "httpStatus": 400,
+  "apiMessage": "Invalid request",
+  "requestBody": {
+    "availability": {
+      "shipToLocationAvailability": {
+        "quantity": 10
+      }
+    },
+    "condition": "NEW",
+    "product": {
+      "title": "Adorno Colgante Creativo",
+      "description": "Decora tu hogar con estilo. Adorno colgante único y creativo para interiores modernos. <br><br> - Diseño innovador, - Materiales de alta calidad, - Fácil de colgar",
+      "imageUrls": [
+        "https://cf.cjdropshipping.com/1623900076081.jpg",
+        "https://cf.cjdropshipping.com/c93fb055-04b0-4ad6-a61d-c68eced466f2.png",
+        "https://cf.cjdropshipping.com/20200703/962004460802.jpg",
+        "https://cf.cjdropshipping.com/b6f5f610-31f2-4d9c-83cf-328f47dbe847.png",
+        "https://cf.cjdropshipping.com/1612520648186.jpg",
+        "https://cf.cjdropshipping.com/1623900076083.jpg",
+        "https://oss-cf.cjdropshipping.com/product/2026/07/14/02/41f2b0ff-8e9a-4e80-a72e-f10b605a2886.jpg",
+        "https://cf.cjdropshipping.com/1623899901201.png",
+        "https://cf.cjdropshipping.com/20200703/128331256576.jpg"
+      ],
+      "aspects": {
+        "Marca": [
+          "Unbranded"
+        ]
+      }
+    }
+  },
+  "responseBody": {
+    "errors": [
+      {
+        "errorId": 2004,
+        "domain": "ACCESS",
+        "category": "REQUEST",
+        "message": "Invalid request",
+        "longMessage": "The request has errors. For help, see the documentation for this API."
+      }
+    ]
+  }
+}
