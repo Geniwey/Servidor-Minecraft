@@ -30,13 +30,13 @@ jobs:
 
       - name: Descargar el mundo y llave
         run: |
-          # 1. Crear carpeta normal del usuario
-          mkdir -p ~/.config/playit
+          # 1. Crear la ruta EXACTA que pide la versión portátil (_gg)
+          mkdir -p ~/.config/playit_gg
           
-          # 2. Descargar llave si existe en Drive (como lo borraste, bajará nada)
-          rclone copy gdrive:playit.toml ~/.config/playit/ || true
+          # 2. Descargar llave
+          rclone copy gdrive:playit.toml ~/.config/playit_gg/ || true
           
-          # 3. Descargar el mundo
+          # 3. Descargar mundo
           rclone copy gdrive:ZerdolandIII.tar.gz ./ || true
           if [ -f "ZerdolandIII.tar.gz" ]; then
             tar -xzf ZerdolandIII.tar.gz
@@ -47,20 +47,18 @@ jobs:
 
       - name: Descargar Playit (Versión Portátil)
         run: |
-          # LA SOLUCIÓN: Descargar el ejecutable suelto en vez de instalarlo en el sistema
           curl -SsL -o playit https://github.com/playit-cloud/playit-agent/releases/latest/download/playit-linux-amd64
           chmod +x playit
 
       - name: Arrancar Playit y Servidor
         run: |
-          # Arrancamos nuestra versión portátil
           ./playit > playit.log 2>&1 &
           
           (
             LLAVE_GUARDADA=false
             while true; do
-              # Verificar si el archivo ya tiene la contraseña secreta
-              if grep -q "secret" ~/.config/playit/playit.toml 2>/dev/null; then
+              # Leer de la carpeta correcta (_gg)
+              if grep -q "secret" ~/.config/playit_gg/playit.toml 2>/dev/null; then
                  ESTADO="VINCULADO"
               else
                  ESTADO="FALTA"
@@ -78,10 +76,10 @@ jobs:
                   echo "✅ AGENTE VINCULADO. Procesando IP en la nube..."
                 fi
                 
-                # Guardado en Drive
+                # Guardar en Drive desde la carpeta _gg
                 if [ "$LLAVE_GUARDADA" = false ]; then
                   echo "💾 Guardando llave vinculada en Drive..."
-                  cp ~/.config/playit/playit.toml ./playit.toml
+                  cp ~/.config/playit_gg/playit.toml ./playit.toml
                   if rclone copy ./playit.toml gdrive: ; then
                     echo "✅ ¡LLAVE GUARDADA DEFINITIVAMENTE!"
                     LLAVE_GUARDADA=true
@@ -93,7 +91,6 @@ jobs:
                 echo "⚠️ FALTA VINCULAR PLAYIT. CLICA AQUÍ YA: $LINK"
               else
                 echo "⏳ Iniciando túnel..."
-                # EL CHIVATO: Si Playit se atasca, nos dirá por qué exactamente
                 echo "   [Mensaje interno de Playit:]"
                 cat playit.log | tail -n 2
               fi
@@ -115,7 +112,7 @@ jobs:
           tar -czf ZerdolandIII.tar.gz servidor
           rclone copy ZerdolandIII.tar.gz gdrive: || true
           
-          if test -f ~/.config/playit/playit.toml; then
-            cp ~/.config/playit/playit.toml ./playit.toml
+          if test -f ~/.config/playit_gg/playit.toml; then
+            cp ~/.config/playit_gg/playit.toml ./playit.toml
             rclone copy ./playit.toml gdrive: || true
           fi
