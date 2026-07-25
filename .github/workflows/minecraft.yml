@@ -28,14 +28,19 @@ jobs:
           ${{ secrets.RCLONE_CONF }}
           EOF
 
-      - name: Descargar el mundo y Configuración
+      - name: Descargar mundo y configuración
         run: |
-          # Descargar configuración de Playit
+          # Intentar descargar config guardada
           mkdir -p ~/.config/playit_gg
-          rclone copy gdrive:playit_config/ ~/.config/playit_gg/ -v || true
+          rclone copy gdrive:playit_config/ ~/.config/playit_gg/ || true
           
-          echo "📁 Archivos descargados:"
-          ls -lah ~/.config/playit_gg/ 2>/dev/null || echo "   (primera ejecución)"
+          echo "📁 Configuración en Drive:"
+          if [ -f ~/.config/playit_gg/playit.toml ]; then
+            echo "✅ Encontrada - usando configuración guardada"
+            ls -lah ~/.config/playit_gg/
+          else
+            echo "⚠️ No encontrada - primera ejecución"
+          fi
           
           # Descargar mundo
           rclone copy gdrive:ZerdolandIII.tar.gz ./ || true
@@ -44,12 +49,11 @@ jobs:
             tar -xzf ZerdolandIII.tar.gz
             rm ZerdolandIII.tar.gz
           else
-            echo "⚠️ Descargando carpeta completa..."
             mkdir -p servidor
             rclone copy gdrive:ZerdolandIII ./servidor --transfers 8 || true
           fi
 
-      - name: Descargar Playit (Versión Portátil)
+      - name: Descargar Playit
         run: |
           curl -SsL -o playit https://github.com/playit-cloud/playit-agent/releases/latest/download/playit-linux-amd64
           chmod +x playit
@@ -57,24 +61,37 @@ jobs:
 
       - name: Arrancar Playit y Servidor
         run: |
-          # 🎯 SOLUCIÓN: Ejecutar Playit directamente sin daemon
-          # Esto evita el error del socket IPC
+          echo "🚀 Iniciando Playit..."
           
-          echo "🚀 Arrancando Playit en modo directo..."
+          # 🎯 CLAVE: Usar el modo "claim" directamente
+          # Esto evita el problema del daemon/socket
           
-          # Si existe configuración previa, usarla
           if [ -f ~/.config/playit_gg/playit.toml ]; then
-            echo "🔑 Usando configuración guardada"
-            ./playit --secret-path ~/.config/playit_gg/playit.toml &> playit.log &
+            echo "🔑 Usando configuración existente"
+            # Modo normal con configuración
+            PLAYIT_SECRET=$(grep "secret_key" ~/.config/playit_gg/playit.toml | cut -d'"' -f2)
+            if [ -n "$PLAYIT_SECRET" ]; then
+              echo "secret_key = \"$PLAYIT_SECRET\"" > /tmp/playit.toml
+              ./playit --config /tmp/playit.toml &> playit.log &
+            else
+              ./playit &> playit.log &
+            fi
           else
-            echo "⚠️ Primera ejecución, creando configuración nueva"
+            echo "⚠️ Primera ejecución - generando configuración nueva"
             ./playit &> playit.log &
           fi
           
           PLAYIT_PID=$!
           echo "   PID: $PLAYIT_PID"
           
-          sleep 8
+          sleep 10
+          
+          echo ""
+          echo "📋 ESTADO INICIAL DE PLAYIT:"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          head -n 20 playit.log
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo ""
           
           # Monitor
           (
@@ -84,129 +101,120 @@ jobs:
             while true; do
               CICLOS=$((CICLOS + 1))
               
-              # Verificar que Playit sigue corriendo
+              # Verificar si Playit murió
               if ! kill -0 $PLAYIT_PID 2>/dev/null; then
                 echo ""
                 echo "❌ PLAYIT SE DETUVO"
-                echo "📋 Log completo:"
+                echo ""
+                echo "📋 LOG COMPLETO:"
                 cat playit.log
                 echo ""
-                
-                # Reintentar una vez
-                echo "🔄 Reintentando..."
-                if [ -f ~/.config/playit_gg/playit.toml ]; then
-                  ./playit --secret-path ~/.config/playit_gg/playit.toml &> playit.log &
-                else
-                  ./playit &> playit.log &
-                fi
-                PLAYIT_PID=$!
-                sleep 8
-                continue
+                echo "🔧 Diagnostico:"
+                echo "   - Tamaño del log: $(wc -l < playit.log) líneas"
+                echo "   - Última línea: $(tail -n 1 playit.log)"
+                echo ""
+                exit 1
               fi
               
-              LINK=$(grep -oE 'https://playit\.gg/claim/[a-zA-Z0-9-]+' playit.log 2>/dev/null | head -1 || true)
-              IP=$(grep -oE '[a-zA-Z0-9-]+\.(gl\.joinmc\.link|auto\.playit\.gg)' playit.log 2>/dev/null | head -1 || true)
+              LINK=$(grep -oE 'https://playit\.gg/claim/[a-zA-Z0-9-]+' playit.log 2>/dev/null | tail -1 || true)
+              IP=$(grep -oE '[a-zA-Z0-9-]+\.(gl\.joinmc\.link|auto\.playit\.gg)' playit.log 2>/dev/null | tail -1 || true)
               
-              echo ""
-              echo "🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴"
-              echo "⏱️  Ciclo #$CICLOS"
-              echo ""
-              
-              if [ -n "$IP" ]; then
-                echo "✅ SERVIDOR ACTIVO"
-                echo "🌐 TU IP: $IP"
+              # Solo mostrar cada 3 ciclos o cuando hay cambio
+              if [ $((CICLOS % 3)) -eq 1 ] || [ -n "$LINK" ] || [ -n "$IP" ]; then
+                echo ""
+                echo "🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴"
+                echo "⏱️  Ciclo #$CICLOS - $(date '+%H:%M:%S')"
                 echo ""
                 
-                if [ "$CONFIG_GUARDADA" = false ]; then
-                  echo "💾 Guardando configuración..."
-                  sleep 5
+                if [ -n "$IP" ]; then
+                  echo "✅ SERVIDOR ACTIVO"
+                  echo "🌐 IP: $IP"
+                  echo ""
                   
-                  # Copiar TODOS los archivos que Playit haya creado
-                  echo "📁 Archivos a guardar:"
-                  ls -lah ~/.config/playit_gg/
-                  
-                  if rclone copy ~/.config/playit_gg/ gdrive:playit_config/ -v; then
-                    echo ""
-                    echo "✅ ¡CONFIGURACIÓN GUARDADA!"
-                    echo "🎉 Próximos runs usarán la misma IP"
-                    CONFIG_GUARDADA=true
+                  if [ "$CONFIG_GUARDADA" = false ]; then
+                    echo "💾 Guardando configuración..."
+                    sleep 5
+                    
+                    if [ -d ~/.config/playit_gg ] && [ "$(ls -A ~/.config/playit_gg 2>/dev/null)" ]; then
+                      echo "📁 Archivos a guardar:"
+                      ls -lah ~/.config/playit_gg/
+                      
+                      if rclone copy ~/.config/playit_gg/ gdrive:playit_config/ -v; then
+                        echo "✅ ¡CONFIGURACIÓN GUARDADA!"
+                        CONFIG_GUARDADA=true
+                      fi
+                    fi
+                  else
+                    echo "💚 Configuración permanente activa"
                   fi
+                  
+                elif [ -n "$LINK" ]; then
+                  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                  echo "⚠️  ¡VINCULA TU AGENTE!"
+                  echo ""
+                  echo "🔗 $LINK"
+                  echo ""
+                  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                  echo ""
+                  echo "📝 INSTRUCCIONES:"
+                  echo "   1. Copia y pega el link en tu navegador"
+                  echo "   2. Inicia sesión en Playit.gg"
+                  echo "   3. Después, ve a https://playit.gg/account/tunnels"
+                  echo "   4. Crea un túnel TCP para el puerto 25565"
+                  echo ""
+                  echo "⏳ Esperando vinculación..."
+                  
                 else
-                  echo "💚 Configuración permanente activa"
+                  echo "⏳ Iniciando..."
+                  echo ""
+                  echo "📋 Últimas líneas:"
+                  tail -n 5 playit.log 2>/dev/null | grep -v "^$"
                 fi
                 
-              elif [ -n "$LINK" ]; then
-                echo "⚠️  ACCIÓN REQUERIDA - VINCULA TU AGENTE"
                 echo ""
-                echo "🔗 $LINK"
+                echo "🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴"
                 echo ""
-                echo "📝 INSTRUCCIONES:"
-                echo "   1. Haz clic en el link"
-                echo "   2. Inicia sesión en Playit.gg"
-                echo "   3. Después de vincular, ve a:"
-                echo "      https://playit.gg/account/tunnels"
-                echo "   4. Crea un túnel TCP para el puerto 25565"
-                echo ""
-                echo "⏳ Esperando..."
-                
-              else
-                echo "⏳ Iniciando túnel Playit..."
-                echo ""
-                echo "📋 Últimas líneas:"
-                tail -n 4 playit.log 2>/dev/null | grep -v "^$" || echo "   (sin logs relevantes)"
               fi
-              
-              echo ""
-              echo "🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴"
-              echo ""
               
               sleep 20
             done
           ) &
           
+          # Esperar un poco antes de Minecraft
+          sleep 15
+          
           # Arrancar Minecraft
           echo ""
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "🎮 INICIANDO SERVIDOR MINECRAFT"
+          echo "🎮 INICIANDO MINECRAFT"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo ""
           
           cd servidor
           
           if [ ! -f "run.sh" ]; then
-            echo "❌ ERROR: run.sh no encontrado"
+            echo "❌ run.sh no encontrado"
             ls -la
             exit 1
           fi
           
           echo "eula=true" > eula.txt
           chmod +x run.sh
-          
           ./run.sh
 
-      - name: Guardar mundo y configuración final
+      - name: Guardar mundo y configuración
         if: always()
         run: |
           echo ""
-          echo "💾 ===== GUARDADO FINAL ====="
-          echo ""
+          echo "💾 Guardando..."
           
-          # Guardar mundo
-          echo "📦 Comprimiendo mundo..."
+          # Mundo
           tar -czf ZerdolandIII.tar.gz servidor
-          echo "☁️  Subiendo..."
           rclone copy ZerdolandIII.tar.gz gdrive: -v || true
           
-          # Guardar configuración Playit
-          echo ""
-          echo "🔑 Respaldando configuración..."
-          if [ -d ~/.config/playit_gg ] && [ "$(ls -A ~/.config/playit_gg 2>/dev/null)" ]; then
-            ls -lah ~/.config/playit_gg/
+          # Configuración Playit
+          if [ -d ~/.config/playit_gg ] && [ "$(ls -A ~/.config/playit_gg)" ]; then
             rclone copy ~/.config/playit_gg/ gdrive:playit_config/ -v || true
-            echo "✅ Respaldo completado"
-          else
-            echo "⚠️ Sin configuración que respaldar"
           fi
           
-          echo ""
-          echo "✅ GUARDADO COMPLETADO"
+          echo "✅ Completado"
