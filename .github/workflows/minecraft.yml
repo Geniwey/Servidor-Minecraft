@@ -20,7 +20,7 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: Instalar Rclone (Conexión a Drive)
+      - name: Instalar Rclone
         run: |
           curl https://rclone.org/install.sh | sudo bash
           mkdir -p ~/.config/rclone
@@ -39,47 +39,61 @@ jobs:
             rclone copy gdrive:ZerdolandIII ./servidor --transfers 8 || true
           fi
 
-      - name: Instalar Playit (Versión Oficial del Sistema)
+      - name: Arrancar Playit y Servidor
         run: |
-          # Instalación oficial. Linux se encarga de todo, cero errores de socket.
-          curl -SsL https://playit-cloud.github.io/ppa/key.gpg | gpg --dearmor | sudo tee /etc/apt/trusted.gpg.d/playit.gpg >/dev/null
-          echo "deb [signed-by=/etc/apt/trusted.gpg.d/playit.gpg] https://playit-cloud.github.io/ppa/data ./" | sudo tee /etc/apt/sources.list.d/playit-cloud.list
-          sudo apt update
-          sudo apt install playit -y
-
-      - name: Monitor de Playit y Link
-        run: |
+          # 1. Descargar versión portátil oficial
+          curl -SsL -o playit https://github.com/playit-cloud/playit-agent/releases/latest/download/playit-linux-amd64
+          chmod +x playit
+          
+          # 2. Arrancar como SUDO para fulminar el 'os error 2' de raíz
+          sudo ./playit > playit.log 2>&1 &
+          
+          # 3. Monitor para sacar el link por consola (mientras Minecraft arranca)
           (
+            CONFIG_GUARDADA=false
             while true; do
-              # Leemos directamente el registro del sistema
-              LOGS=$(sudo journalctl -u playit --no-pager | tail -n 20)
-              LINK=$(echo "$LOGS" | grep -oE 'https://playit\.gg/claim/[a-zA-Z0-9-]+' | tail -1 || true)
-              IP=$(echo "$LOGS" | grep -oE '[a-zA-Z0-9-]+\.(gl\.joinmc\.link|auto\.playit\.gg)' | tail -1 || true)
-
+              LINK=$(grep -oE 'https://playit\.gg/claim/[a-zA-Z0-9-]+' playit.log | tail -n 1 || true)
+              IP=$(grep -oE '[a-zA-Z0-9-]+\.(gl\.joinmc\.link|auto\.playit\.gg)' playit.log | tail -n 1 || true)
+              
               echo "🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴"
               if [ -n "$IP" ]; then
                 echo "✅ SERVIDOR ACTIVO. TU IP: $IP"
+                if [ "$CONFIG_GUARDADA" = false ]; then
+                  echo "💾 Guardando configuración de Playit..."
+                  # Copiamos la carpeta de administrador para guardarla
+                  sudo cp -r /root/.config/playit_gg ./playit_config || sudo cp -r /root/.config/playit ./playit_config || true
+                  sudo chmod -R 777 ./playit_config || true
+                  
+                  if rclone copy ./playit_config/ gdrive:playit_config/ ; then
+                    echo "✅ ¡CONFIGURACIÓN GUARDADA DEFINITIVAMENTE EN DRIVE!"
+                    CONFIG_GUARDADA=true
+                  fi
+                fi
               elif [ -n "$LINK" ]; then
                 echo "⚠️ FALTA VINCULAR PLAYIT. CLICA AQUÍ YA:"
                 echo "🔗 $LINK"
               else
-                echo "⏳ Esperando a Playit..."
+                echo "⏳ Iniciando túnel..."
               fi
               echo "🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴"
               sleep 20
             done
           ) &
-
-      - name: Arrancar Minecraft
-        run: |
+          
+          # 4. Arrancar Minecraft
           cd servidor
           echo "eula=true" > eula.txt
           chmod +x run.sh
           ./run.sh
 
-      - name: Guardar mundo
+      - name: Guardar mundo y configuración final
         if: always()
         run: |
           echo "Empaquetando servidor..."
           tar -czf ZerdolandIII.tar.gz servidor
           rclone copy ZerdolandIII.tar.gz gdrive: || true
+          
+          # Seguro de guardado final de la configuración de Playit
+          sudo cp -r /root/.config/playit_gg ./playit_config || sudo cp -r /root/.config/playit ./playit_config || true
+          sudo chmod -R 777 ./playit_config || true
+          rclone copy ./playit_config/ gdrive:playit_config/ || true
