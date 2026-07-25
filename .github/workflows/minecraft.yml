@@ -20,7 +20,7 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: Instalar Rclone
+      - name: Instalar Rclone (Conexión a Drive)
         run: |
           curl https://rclone.org/install.sh | sudo bash
           mkdir -p ~/.config/rclone
@@ -41,14 +41,19 @@ jobs:
 
       - name: Arrancar Playit y Servidor
         run: |
-          # 1. Descargar versión portátil oficial
-          curl -SsL -o playit https://github.com/playit-cloud/playit-agent/releases/latest/download/playit-linux-amd64
-          chmod +x playit
+          # 1. Instalar la versión oficial (adiós al os error 2)
+          curl -SsL https://playit-cloud.github.io/ppa/key.gpg | gpg --dearmor | sudo tee /etc/apt/trusted.gpg.d/playit.gpg >/dev/null
+          echo "deb [signed-by=/etc/apt/trusted.gpg.d/playit.gpg] https://playit-cloud.github.io/ppa/data ./" | sudo tee /etc/apt/sources.list.d/playit-cloud.list
+          sudo apt update
+          sudo apt install playit -y
           
-          # 2. Arrancar como SUDO para fulminar el 'os error 2' de raíz
-          sudo ./playit > playit.log 2>&1 &
+          # 2. Detener el servicio oculto que GitHub no sabe leer
+          sudo service playit stop || true
           
-          # 3. Monitor para sacar el link por consola (mientras Minecraft arranca)
+          # 3. Arrancar Playit forzando a que escriba el log manual
+          sudo bash -c 'playit > playit.log 2>&1' &
+          
+          # 4. Monitor leyendo el log manual
           (
             CONFIG_GUARDADA=false
             while true; do
@@ -60,10 +65,9 @@ jobs:
                 echo "✅ SERVIDOR ACTIVO. TU IP: $IP"
                 if [ "$CONFIG_GUARDADA" = false ]; then
                   echo "💾 Guardando configuración de Playit..."
-                  # Copiamos la carpeta de administrador para guardarla
-                  sudo cp -r /root/.config/playit_gg ./playit_config || sudo cp -r /root/.config/playit ./playit_config || true
+                  # La versión oficial guarda sus secretos en /etc/playit
+                  sudo cp -r /etc/playit ./playit_config || true
                   sudo chmod -R 777 ./playit_config || true
-                  
                   if rclone copy ./playit_config/ gdrive:playit_config/ ; then
                     echo "✅ ¡CONFIGURACIÓN GUARDADA DEFINITIVAMENTE EN DRIVE!"
                     CONFIG_GUARDADA=true
@@ -74,26 +78,27 @@ jobs:
                 echo "🔗 $LINK"
               else
                 echo "⏳ Iniciando túnel..."
+                echo "📋 CHIVATO DE PLAYIT:"
+                tail -n 3 playit.log || true
               fi
               echo "🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴"
               sleep 20
             done
           ) &
           
-          # 4. Arrancar Minecraft
+          # 5. Arrancar Minecraft
           cd servidor
           echo "eula=true" > eula.txt
           chmod +x run.sh
           ./run.sh
 
-      - name: Guardar mundo y configuración final
+      - name: Guardar mundo y seguro final
         if: always()
         run: |
           echo "Empaquetando servidor..."
           tar -czf ZerdolandIII.tar.gz servidor
           rclone copy ZerdolandIII.tar.gz gdrive: || true
           
-          # Seguro de guardado final de la configuración de Playit
-          sudo cp -r /root/.config/playit_gg ./playit_config || sudo cp -r /root/.config/playit ./playit_config || true
+          sudo cp -r /etc/playit ./playit_config || true
           sudo chmod -R 777 ./playit_config || true
           rclone copy ./playit_config/ gdrive:playit_config/ || true
