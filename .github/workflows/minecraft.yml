@@ -70,6 +70,11 @@ jobs:
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo ""
           
+          # 🎯 EL PARCHE ANTI-CRASHEO (OS ERROR 2)
+          export XDG_RUNTIME_DIR=/tmp/playit_run
+          mkdir -p /tmp/playit_run
+          chmod 700 /tmp/playit_run
+          
           # Verificar si existe configuración
           if [ -f ~/.config/playit_gg/playit.toml ]; then
             echo "🔑 Usando configuración existente"
