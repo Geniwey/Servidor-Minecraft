@@ -40,35 +40,34 @@ jobs:
             rclone copy gdrive:ZerdolandIII ./servidor --transfers 8 || true
           fi
           
-          # 2. Descargar la configuración mágica de Playit (El billete dorado)
+          # 2. Descargar la configuración de Playit a la ruta OFICIAL
           echo "Descargando configuración de Playit desde Drive..."
-          sudo mkdir -p /root/.config/playit_gg
-          sudo mkdir -p /root/.config/playit
-          
-          # Bajamos la carpeta que se acaba de guardar
+          sudo mkdir -p /etc/playit
           rclone copy gdrive:playit_config/ ./playit_config_temp/ || true
           
           if [ -d "./playit_config_temp" ]; then
-            # Se la inyectamos al administrador
-            sudo cp -r ./playit_config_temp/* /root/.config/playit_gg/ || true
-            sudo cp -r ./playit_config_temp/* /root/.config/playit/ || true
-            sudo chmod -R 777 /root/.config/playit_gg || true
-            sudo chmod -R 777 /root/.config/playit || true
-            echo "✅ Configuración de Playit restaurada con éxito."
+            sudo cp -r ./playit_config_temp/* /etc/playit/ || true
+            sudo chmod -R 777 /etc/playit || true
+            echo "✅ Configuración de Playit restaurada en /etc/playit."
           else
-            echo "⚠️ No se encontró la carpeta playit_config en Drive."
+            echo "⚠️ No se encontró la carpeta playit_config."
           fi
 
       - name: Arrancar Playit y Servidor
         run: |
-          # Descargamos Playit
-          curl -SsL -o playit https://github.com/playit-cloud/playit-agent/releases/latest/download/playit-linux-amd64
-          chmod +x playit
+          # 1. Instalar la versión oficial de Playit (la que NO da problemas)
+          curl -SsL https://playit-cloud.github.io/ppa/key.gpg | gpg --dearmor | sudo tee /etc/apt/trusted.gpg.d/playit.gpg >/dev/null
+          echo "deb [signed-by=/etc/apt/trusted.gpg.d/playit.gpg] https://playit-cloud.github.io/ppa/data ./" | sudo tee /etc/apt/sources.list.d/playit-cloud.list
+          sudo apt update
+          sudo apt install playit -y
           
-          # Arrancamos como administrador (Leerá tu billete dorado automáticamente)
-          sudo ./playit > playit.log 2>&1 &
+          # 2. Detener el servicio oculto que GitHub no sabe leer
+          sudo service playit stop || true
           
-          # Monitor ultra limpio: Solo busca tu IP y arranca
+          # 3. Arrancar forzando a que escriba el log manual y lea el /etc/playit
+          sudo bash -c 'playit > playit.log 2>&1' &
+          
+          # 4. Monitor ultra limpio
           (
             while true; do
               IP=$(grep -oE '[a-zA-Z0-9-]+\.(gl\.joinmc\.link|auto\.playit\.gg)' playit.log | tail -n 1 || true)
@@ -78,7 +77,8 @@ jobs:
                 echo "✅ SERVIDOR ACTIVO. TU IP FIJA ES: $IP"
                 break
               else
-                echo "⏳ Leyendo tu configuración secreta y conectando túnel..."
+                echo "⏳ Leyendo tu configuración secreta..."
+                tail -n 2 playit.log || true
               fi
               echo "🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴"
               sleep 15
@@ -98,7 +98,7 @@ jobs:
           tar -czf ZerdolandIII.tar.gz servidor
           rclone copy ZerdolandIII.tar.gz gdrive: || true
           
-          # Guardamos la config de Playit de nuevo por seguridad
-          sudo cp -r /root/.config/playit_gg ./playit_config || sudo cp -r /root/.config/playit ./playit_config || true
+          # Respaldo de seguridad de la IP
+          sudo cp -r /etc/playit ./playit_config || true
           sudo chmod -R 777 ./playit_config || true
           rclone copy ./playit_config/ gdrive:playit_config/ || true
