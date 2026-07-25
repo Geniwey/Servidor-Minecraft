@@ -45,28 +45,26 @@ jobs:
 
       - name: Configurar Playit
         run: |
-          # Descargar ejecutable
+          # Descargar ejecutable portátil
           curl -SsL -o playit https://github.com/playit-cloud/playit-agent/releases/latest/download/playit-linux-amd64
           chmod +x playit
           
           # Configurar directorio de trabajo
           mkdir -p ~/.config/playit_gg
           
-          # Si existe llave guardada, restaurarla
+          # Restaurar llave si existe
           if [ -f "playit.toml" ]; then
-            echo "🔑 Llave encontrada, restaurando..."
             cp playit.toml ~/.config/playit_gg/playit.toml
             chmod 600 ~/.config/playit_gg/playit.toml
-            cat playit.toml
-          else
-            echo "⚠️ No hay llave guardada, se creará una nueva"
           fi
 
       - name: Arrancar Playit y Servidor
         run: |
-          # Ejecutar Playit SIN SUDO (clave del problema)
+          # EL PARCHE DEFINITIVO: Obligamos a usar /tmp para el socket invisible
+          export XDG_RUNTIME_DIR=/tmp
+          
+          # Ejecutar Playit SIN SUDO
           ./playit &> playit.log &
-          PLAYIT_PID=$!
           
           echo "Esperando arranque de Playit..."
           sleep 8
@@ -74,78 +72,53 @@ jobs:
           # Monitor inteligente
           (
             LLAVE_GUARDADA=false
-            INTENTOS=0
             
             while true; do
               LINK=$(grep -oE 'https://playit\.gg/claim/[a-zA-Z0-9-]+' playit.log 2>/dev/null | head -1 || true)
               IP=$(grep -oE '[a-zA-Z0-9-]+\.(gl\.joinmc\.link|auto\.playit\.gg)' playit.log 2>/dev/null | head -1 || true)
               
-              echo ""
-              echo "🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴"
-              
-              # Verificar si existe el archivo de config
               if [ -f "$HOME/.config/playit_gg/playit.toml" ]; then
                 TIENE_SECRET=$(grep -c "secret_key" "$HOME/.config/playit_gg/playit.toml" 2>/dev/null || echo "0")
               else
                 TIENE_SECRET=0
               fi
               
+              echo ""
+              echo "🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴"
+              
               if [ -n "$IP" ]; then
                 echo "✅ SERVIDOR ACTIVO: $IP"
-                echo ""
                 
                 # Guardar llave SOLO si tiene secret_key y no se ha guardado
                 if [ "$TIENE_SECRET" -gt 0 ] && [ "$LLAVE_GUARDADA" = false ]; then
                   echo "💾 Guardando llave vinculada..."
-                  sleep 3  # Dar tiempo a que Playit termine de escribir
+                  sleep 3 
                   
                   cp "$HOME/.config/playit_gg/playit.toml" ./playit.toml
                   
                   if rclone copy ./playit.toml gdrive: -v; then
                     echo "✅ LLAVE GUARDADA EN DRIVE"
-                    echo "🎉 La próxima vez usará la misma IP automáticamente"
                     LLAVE_GUARDADA=true
-                  else
-                    echo "⚠️ Error subiendo llave, reintentando..."
                   fi
                 fi
                 
-                if [ "$LLAVE_GUARDADA" = true ]; then
-                  echo "💚 Configuración permanente activada"
-                fi
-                
               elif [ -n "$LINK" ]; then
-                echo "⚠️ ACCIÓN REQUERIDA - Vincula tu cuenta:"
-                echo ""
-                echo "👉 $LINK"
-                echo ""
-                echo "⏳ Esperando que hagas clic... (intento $INTENTOS)"
-                INTENTOS=$((INTENTOS + 1))
-                
+                echo "⚠️ FALTA VINCULAR PLAYIT. CLICA AQUÍ YA: $LINK"
               else
                 echo "⏳ Iniciando túnel Playit..."
-                echo ""
                 echo "📋 Últimos mensajes:"
                 tail -n 3 playit.log 2>/dev/null || echo "Sin logs aún"
               fi
               
               echo "🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴"
               echo ""
-              
-              sleep 25
+              sleep 20
             done
           ) &
           
           # Arrancar Minecraft
           cd servidor
           echo "eula=true" > eula.txt
-          
-          if [ ! -f "run.sh" ]; then
-            echo "❌ ERROR: No existe run.sh"
-            ls -la
-            exit 1
-          fi
-          
           chmod +x run.sh
           ./run.sh
 
@@ -156,17 +129,7 @@ jobs:
           tar -czf ZerdolandIII.tar.gz servidor
           rclone copy ZerdolandIII.tar.gz gdrive: -v || true
           
-          echo "🔑 Guardando llave final..."
           if [ -f "$HOME/.config/playit_gg/playit.toml" ]; then
             cp "$HOME/.config/playit_gg/playit.toml" ./playit.toml
             rclone copy ./playit.toml gdrive: -v || true
-            
-            echo "📄 Contenido de la llave guardada:"
-            cat ./playit.toml | head -n 5
-          else
-            echo "⚠️ No se encontró playit.toml en $HOME/.config/playit_gg/"
-            echo "Archivos en el directorio:"
-            ls -la "$HOME/.config/playit_gg/" 2>/dev/null || echo "El directorio no existe"
           fi
-          
-          echo "✅ Proceso de guardado completado"
