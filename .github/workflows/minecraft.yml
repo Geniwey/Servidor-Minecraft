@@ -30,16 +30,28 @@ jobs:
 
       - name: Descargar el mundo y Configuración
         run: |
-          # Descargamos LA CARPETA ENTERA para no perder ningún archivo de túnel
+          # Descargar configuración de Playit
           mkdir -p ~/.config/playit_gg
-          rclone copy gdrive:playit_config/ ~/.config/playit_gg/ || true
+          echo "📥 Descargando configuración guardada..."
+          rclone copy gdrive:playit_config/ ~/.config/playit_gg/ -v || true
+          
+          echo ""
+          echo "📁 Archivos de configuración encontrados:"
+          if [ "$(ls -A ~/.config/playit_gg 2>/dev/null)" ]; then
+            ls -lah ~/.config/playit_gg/
+          else
+            echo "   (ninguno - primera ejecución)"
+          fi
+          echo ""
           
           # Descargar mundo
           rclone copy gdrive:ZerdolandIII.tar.gz ./ || true
           if [ -f "ZerdolandIII.tar.gz" ]; then
+            echo "📦 Descomprimiendo mundo guardado..."
             tar -xzf ZerdolandIII.tar.gz
             rm ZerdolandIII.tar.gz
           else
+            echo "⚠️  No hay backup comprimido, descargando carpeta..."
             mkdir -p servidor
             rclone copy gdrive:ZerdolandIII ./servidor --transfers 8 || true
           fi
@@ -48,72 +60,204 @@ jobs:
         run: |
           curl -SsL -o playit https://github.com/playit-cloud/playit-agent/releases/latest/download/playit-linux-amd64
           chmod +x playit
+          echo "✅ Playit descargado y ejecutable"
 
       - name: Arrancar Playit y Servidor
         run: |
-          # 🎯 EL PARCHE NUCLEAR: Creamos a la fuerza la carpeta invisible que Playit exige
-          sudo mkdir -p /run/user/$(id -u)
-          sudo chown -R $(id -u):$(id -g) /run/user/$(id -u)
-          sudo chmod 700 /run/user/$(id -u)
-          export XDG_RUNTIME_DIR=/run/user/$(id -u)
+          # Crear carpeta temporal para sockets
+          export XDG_RUNTIME_DIR=/tmp/playit_run
+          mkdir -p /tmp/playit_run
+          chmod 700 /tmp/playit_run
           
-          # Ejecutar SIN sudo
+          echo "🚀 Arrancando Playit..."
+          echo "   Runtime: $XDG_RUNTIME_DIR"
+          echo "   Config: ~/.config/playit_gg"
+          echo ""
+          
+          # Arrancar Playit
           ./playit &> playit.log &
+          PLAYIT_PID=$!
+          echo "   PID: $PLAYIT_PID"
           
+          sleep 8
+          
+          # Monitor con debug mejorado
           (
             CONFIG_GUARDADA=false
+            CICLOS=0
+            ERRORES=0
+            
             while true; do
-              LINK=$(grep -oE 'https://playit\.gg/claim/[a-zA-Z0-9-]+' playit.log | head -1 || true)
-              IP=$(grep -oE '[a-zA-Z0-9-]+\.(gl\.joinmc\.link|auto\.playit\.gg)' playit.log | head -1 || true)
+              CICLOS=$((CICLOS + 1))
+              
+              # Verificar que Playit sigue vivo
+              if ! kill -0 $PLAYIT_PID 2>/dev/null; then
+                echo ""
+                echo "❌ PLAYIT SE DETUVO INESPERADAMENTE"
+                echo ""
+                echo "📋 Log completo:"
+                cat playit.log
+                echo ""
+                exit 1
+              fi
+              
+              LINK=$(grep -oE 'https://playit\.gg/claim/[a-zA-Z0-9-]+' playit.log 2>/dev/null | head -1 || true)
+              IP=$(grep -oE '[a-zA-Z0-9-]+\.(gl\.joinmc\.link|auto\.playit\.gg)' playit.log 2>/dev/null | head -1 || true)
+              ERROR_LINE=$(grep -i "error" playit.log 2>/dev/null | tail -1 || true)
               
               echo ""
               echo "🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴"
+              echo "⏱️  Ciclo #$CICLOS - $(date '+%H:%M:%S')"
+              echo ""
               
               if [ -n "$IP" ]; then
-                echo "✅ SERVIDOR ACTIVO. TU IP: $IP"
+                echo "✅ SERVIDOR ACTIVO"
+                echo "🌐 TU IP: $IP"
+                echo ""
+                ERRORES=0
                 
-                # Guardar TODA la carpeta en cuanto haya IP
+                # Guardar configuración una sola vez
                 if [ "$CONFIG_GUARDADA" = false ]; then
-                  echo "💾 Guardando configuración completa en Drive..."
+                  echo "💾 Guardando configuración permanente..."
                   sleep 5
                   
-                  if rclone copy ~/.config/playit_gg/ gdrive:playit_config/ ; then
-                    echo "✅ ¡CONFIGURACIÓN GUARDADA DEFINITIVAMENTE!"
+                  echo "📁 Archivos a guardar:"
+                  ls -lah ~/.config/playit_gg/
+                  echo ""
+                  
+                  if rclone copy ~/.config/playit_gg/ gdrive:playit_config/ -v; then
+                    echo ""
+                    echo "✅ ¡CONFIGURACIÓN GUARDADA EN DRIVE!"
+                    echo "🎉 Próximos reinicios usarán la misma IP automáticamente"
+                    echo ""
                     CONFIG_GUARDADA=true
+                  else
+                    echo "⚠️  Error al guardar, reintentando..."
                   fi
                 else
-                  echo "💚 Configuración asegurada en tu Drive."
+                  echo "💚 Configuración permanente activa"
                 fi
                 
               elif [ -n "$LINK" ]; then
-                echo "⚠️ FALTA VINCULAR PLAYIT. CLICA AQUÍ YA: $LINK"
-                echo "👉 NOTA: Si tras vincular no sale la IP, entra a la web de Playit"
-                echo "   y asegúrate de crear un túnel TCP al puerto 25565."
+                echo "⚠️  ACCIÓN REQUERIDA - VINCULA TU AGENTE"
+                echo ""
+                echo "🔗 $LINK"
+                echo ""
+                echo "📝 PASOS A SEGUIR:"
+                echo "   1. Haz clic en el link de arriba"
+                echo "   2. Inicia sesión en Playit.gg"
+                echo "   3. Ve a: https://playit.gg/account/tunnels"
+                echo "   4. Crea un túnel TCP al puerto 25565"
+                echo "   5. Vuelve aquí y espera a que aparezca la IP"
+                echo ""
+                echo "⏳ Esperando vinculación..."
+                ERRORES=0
+                
+              elif [ -n "$ERROR_LINE" ]; then
+                ERRORES=$((ERRORES + 1))
+                echo "⚠️  ERROR detectado ($ERRORES/3):"
+                echo "   $ERROR_LINE"
+                echo ""
+                
+                if [ $ERRORES -ge 3 ]; then
+                  echo "❌ Demasiados errores consecutivos"
+                  echo ""
+                  echo "📋 Log completo de Playit:"
+                  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                  cat playit.log
+                  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                  echo ""
+                  echo "💡 SOLUCIONES POSIBLES:"
+                  echo "   1. Borra la carpeta 'playit_config' de Google Drive"
+                  echo "   2. Vuelve a ejecutar el workflow"
+                  echo ""
+                  exit 1
+                fi
+                
               else
-                echo "⏳ Iniciando túnel..."
-                echo "   [Último mensaje de Playit:]"
-                tail -n 2 playit.log || true
+                echo "⏳ Iniciando túnel Playit..."
+                echo ""
+                echo "📋 Últimas 3 líneas del log:"
+                tail -n 3 playit.log 2>/dev/null || echo "   (esperando logs...)"
+                ERRORES=0
               fi
               
+              echo ""
               echo "🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴"
               echo ""
+              
               sleep 20
             done
           ) &
           
+          # Arrancar Minecraft
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "🎮 INICIANDO SERVIDOR MINECRAFT"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo ""
+          
           cd servidor
+          
+          if [ ! -f "run.sh" ]; then
+            echo "❌ ERROR: No existe run.sh"
+            echo ""
+            echo "📁 Contenido de la carpeta:"
+            ls -la
+            echo ""
+            exit 1
+          fi
+          
           echo "eula=true" > eula.txt
           chmod +x run.sh
+          
+          echo "✅ Ejecutando run.sh..."
+          echo ""
           ./run.sh
 
-      - name: Guardar mundo y seguro final
+      - name: Guardar mundo y configuración final
         if: always()
         run: |
-          echo "Empaquetando servidor..."
-          tar -czf ZerdolandIII.tar.gz servidor
-          rclone copy ZerdolandIII.tar.gz gdrive: || true
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "💾 GUARDADO FINAL"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo ""
           
-          echo "Asegurando configuración final..."
-          if [ -d ~/.config/playit_gg ]; then
-            rclone copy ~/.config/playit_gg/ gdrive:playit_config/ || true
+          # Guardar mundo
+          echo "📦 Comprimiendo mundo..."
+          tar -czf ZerdolandIII.tar.gz servidor
+          TAMANIO=$(du -h ZerdolandIII.tar.gz | cut -f1)
+          echo "   Tamaño: $TAMANIO"
+          
+          echo "☁️  Subiendo a Drive..."
+          if rclone copy ZerdolandIII.tar.gz gdrive: -v; then
+            echo "✅ Mundo guardado"
+          else
+            echo "⚠️  Error al guardar mundo"
           fi
+          
+          # Guardar configuración Playit
+          echo ""
+          echo "🔑 Guardando configuración de Playit..."
+          
+          if [ -d ~/.config/playit_gg ] && [ "$(ls -A ~/.config/playit_gg 2>/dev/null)" ]; then
+            echo "📁 Archivos a respaldar:"
+            ls -lah ~/.config/playit_gg/
+            
+            echo "☁️  Subiendo a Drive..."
+            if rclone copy ~/.config/playit_gg/ gdrive:playit_config/ -v; then
+              echo "✅ Configuración respaldada"
+            fi
+          else
+            echo "⚠️  No hay configuración que respaldar"
+          fi
+          
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "✅ GUARDADO COMPLETADO"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo ""
+          
+          echo "📊 Archivos en Drive (playit_config):"
+          rclone ls gdrive:playit_config/ 2>/dev/null || echo "   (sin archivos)"
