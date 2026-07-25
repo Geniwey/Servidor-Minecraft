@@ -28,8 +28,9 @@ jobs:
           ${{ secrets.RCLONE_CONF }}
           EOF
 
-      - name: Descargar el mundo
+      - name: Descargar el mundo y TU IP FIJA
         run: |
+          # 1. Descargar el mundo
           rclone copy gdrive:ZerdolandIII.tar.gz ./ || true
           if [ -f "ZerdolandIII.tar.gz" ]; then
             tar -xzf ZerdolandIII.tar.gz
@@ -38,55 +39,53 @@ jobs:
             mkdir -p servidor
             rclone copy gdrive:ZerdolandIII ./servidor --transfers 8 || true
           fi
+          
+          # 2. Descargar la configuración mágica de Playit (El billete dorado)
+          echo "Descargando configuración de Playit desde Drive..."
+          sudo mkdir -p /root/.config/playit_gg
+          sudo mkdir -p /root/.config/playit
+          
+          # Bajamos la carpeta que se acaba de guardar
+          rclone copy gdrive:playit_config/ ./playit_config_temp/ || true
+          
+          if [ -d "./playit_config_temp" ]; then
+            # Se la inyectamos al administrador
+            sudo cp -r ./playit_config_temp/* /root/.config/playit_gg/ || true
+            sudo cp -r ./playit_config_temp/* /root/.config/playit/ || true
+            sudo chmod -R 777 /root/.config/playit_gg || true
+            sudo chmod -R 777 /root/.config/playit || true
+            echo "✅ Configuración de Playit restaurada con éxito."
+          else
+            echo "⚠️ No se encontró la carpeta playit_config en Drive."
+          fi
 
       - name: Arrancar Playit y Servidor
         run: |
-          # 1. Instalar la versión oficial (adiós al os error 2)
-          curl -SsL https://playit-cloud.github.io/ppa/key.gpg | gpg --dearmor | sudo tee /etc/apt/trusted.gpg.d/playit.gpg >/dev/null
-          echo "deb [signed-by=/etc/apt/trusted.gpg.d/playit.gpg] https://playit-cloud.github.io/ppa/data ./" | sudo tee /etc/apt/sources.list.d/playit-cloud.list
-          sudo apt update
-          sudo apt install playit -y
+          # Descargamos Playit
+          curl -SsL -o playit https://github.com/playit-cloud/playit-agent/releases/latest/download/playit-linux-amd64
+          chmod +x playit
           
-          # 2. Detener el servicio oculto que GitHub no sabe leer
-          sudo service playit stop || true
+          # Arrancamos como administrador (Leerá tu billete dorado automáticamente)
+          sudo ./playit > playit.log 2>&1 &
           
-          # 3. Arrancar Playit forzando a que escriba el log manual
-          sudo bash -c 'playit > playit.log 2>&1' &
-          
-          # 4. Monitor leyendo el log manual
+          # Monitor ultra limpio: Solo busca tu IP y arranca
           (
-            CONFIG_GUARDADA=false
             while true; do
-              LINK=$(grep -oE 'https://playit\.gg/claim/[a-zA-Z0-9-]+' playit.log | tail -n 1 || true)
               IP=$(grep -oE '[a-zA-Z0-9-]+\.(gl\.joinmc\.link|auto\.playit\.gg)' playit.log | tail -n 1 || true)
               
               echo "🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴"
               if [ -n "$IP" ]; then
-                echo "✅ SERVIDOR ACTIVO. TU IP: $IP"
-                if [ "$CONFIG_GUARDADA" = false ]; then
-                  echo "💾 Guardando configuración de Playit..."
-                  # La versión oficial guarda sus secretos en /etc/playit
-                  sudo cp -r /etc/playit ./playit_config || true
-                  sudo chmod -R 777 ./playit_config || true
-                  if rclone copy ./playit_config/ gdrive:playit_config/ ; then
-                    echo "✅ ¡CONFIGURACIÓN GUARDADA DEFINITIVAMENTE EN DRIVE!"
-                    CONFIG_GUARDADA=true
-                  fi
-                fi
-              elif [ -n "$LINK" ]; then
-                echo "⚠️ FALTA VINCULAR PLAYIT. CLICA AQUÍ YA:"
-                echo "🔗 $LINK"
+                echo "✅ SERVIDOR ACTIVO. TU IP FIJA ES: $IP"
+                break
               else
-                echo "⏳ Iniciando túnel..."
-                echo "📋 CHIVATO DE PLAYIT:"
-                tail -n 3 playit.log || true
+                echo "⏳ Leyendo tu configuración secreta y conectando túnel..."
               fi
               echo "🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴"
-              sleep 20
+              sleep 15
             done
           ) &
           
-          # 5. Arrancar Minecraft
+          # Arrancar Minecraft
           cd servidor
           echo "eula=true" > eula.txt
           chmod +x run.sh
@@ -99,6 +98,7 @@ jobs:
           tar -czf ZerdolandIII.tar.gz servidor
           rclone copy ZerdolandIII.tar.gz gdrive: || true
           
-          sudo cp -r /etc/playit ./playit_config || true
+          # Guardamos la config de Playit de nuevo por seguridad
+          sudo cp -r /root/.config/playit_gg ./playit_config || sudo cp -r /root/.config/playit ./playit_config || true
           sudo chmod -R 777 ./playit_config || true
           rclone copy ./playit_config/ gdrive:playit_config/ || true
