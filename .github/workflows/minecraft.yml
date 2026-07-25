@@ -13,7 +13,6 @@ jobs:
   iniciar_servidor:
     runs-on: ubuntu-latest
     timeout-minutes: 330
-    
     steps:
       - name: Preparar Java (JAVA 21)
         uses: actions/setup-java@v4
@@ -28,18 +27,6 @@ jobs:
           cat << 'EOF' > ~/.config/rclone/rclone.conf
           ${{ secrets.RCLONE_CONF }}
           EOF
-
-      - name: Descargar configuración de Playit
-        run: |
-          echo "🔍 Buscando configuración guardada..."
-          rclone copy gdrive:playit_secret.txt ./ || true
-          
-          if [ -f playit_secret.txt ]; then
-            echo "✅ Secret key encontrada"
-            cat playit_secret.txt
-          else
-            echo "⚠️ No hay secret guardada (primera vez)"
-          fi
 
       - name: Descargar mundo
         run: |
@@ -57,96 +44,142 @@ jobs:
         run: |
           curl -SsL -o playit https://github.com/playit-cloud/playit-agent/releases/latest/download/playit-linux-amd64
           chmod +x playit
+          echo "✅ Playit descargado"
 
-      - name: Arrancar Playit y Minecraft
+      - name: Restaurar configuración (si existe)
+        run: |
+          echo "🔍 Buscando configuración guardada..."
+          
+          rclone copy gdrive:playit_config/ /tmp/playit_backup/ || true
+          
+          if [ -d /tmp/playit_backup ] && [ "$(ls -A /tmp/playit_backup)" ]; then
+            echo "✅ Configuración encontrada, restaurando..."
+            mkdir -p ~/.config/playit_gg
+            cp -r /tmp/playit_backup/* ~/.config/playit_gg/
+            ls -lah ~/.config/playit_gg/
+          else
+            echo "⚠️ No hay configuración guardada (primera ejecución)"
+            echo "   Playit creará una nueva"
+          fi
+
+      - name: Arrancar Playit
         run: |
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "🚀 INICIANDO PLAYIT"
+          echo "🚀 ARRANCANDO PLAYIT (BUNKER MODE)"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo ""
           
-          # 🔥 SOLUCIÓN DEFINITIVA: Usar variables de entorno para evitar daemon
-          export PLAYIT_SECRET_PATH="$PWD/playit_secret.txt"
+          # 🎯 EL PARCHE DEFINITIVO
+          # Creamos absolutamente todas las subcarpetas de socket que Playit pide
+          export XDG_RUNTIME_DIR=/tmp
+          mkdir -p /tmp/playit_gg
+          mkdir -p /tmp/playit
           
-          if [ -f playit_secret.txt ]; then
-            echo "🔑 Usando secret guardada"
-            export PLAYIT_SECRET=$(cat playit_secret.txt)
-          else
-            echo "🆕 Primera ejecución"
-          fi
+          # Por si busca la ruta por defecto en Linux:
+          sudo mkdir -p /run/user/$(id -u)/playit_gg
+          sudo mkdir -p /run/user/$(id -u)/playit
+          sudo chown -R $(id -u):$(id -g) /run/user/$(id -u)
           
-          # Ejecutar en modo NO-DAEMON
-          ./playit 2>&1 | tee playit.log &
+          # Forzar a que exista el archivo toml vacío si es la primera vez
+          mkdir -p ~/.config/playit_gg
+          touch ~/.config/playit_gg/playit.toml
+          
+          echo "🔑 Usando configuración existente o archivo en blanco..."
+          
+          # Arrancar Playit
+          ./playit --secret-path ~/.config/playit_gg/playit.toml > playit.log 2>&1 &
           PLAYIT_PID=$!
           
           echo "   PID: $PLAYIT_PID"
           sleep 10
           
           echo ""
-          echo "📋 Primeras líneas del log:"
-          head -n 20 playit.log
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "📋 LOG DE PLAYIT:"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          cat playit.log
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo ""
           
-          # Monitor y arranque de Minecraft en paralelo
+          if ! kill -0 $PLAYIT_PID 2>/dev/null; then
+            echo "❌ Playit se detuvo inesperadamente"
+            exit 1
+          fi
+          
+          echo "✅ Playit está corriendo"
+          
+          LINK=$(grep -oE 'https://playit\.gg/claim/[a-zA-Z0-9-]+' playit.log | head -1 || true)
+          IP=$(grep -oE '[a-zA-Z0-9-]+\.(gl\.joinmc\.link|auto\.playit\.gg)' playit.log | head -1 || true)
+          
+          echo ""
+          if [ -n "$LINK" ]; then
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "⚠️  ¡VINCULA TU AGENTE!"
+            echo ""
+            echo "🔗 $LINK"
+            echo ""
+            echo "📝 INSTRUCCIONES:"
+            echo "   1. Haz clic en el link"
+            echo "   2. Inicia sesión en Playit.gg"
+            echo "   3. Crea un túnel TCP al puerto 25565 en:"
+            echo "      https://playit.gg/account/tunnels"
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          elif [ -n "$IP" ]; then
+            echo "✅ IP DETECTADA: $IP"
+          else
+            echo "⏳ Esperando link o IP..."
+          fi
+          
           (
-            SECRET_GUARDADA=false
+            CONFIG_GUARDADA=false
             
             while true; do
-              # Verificar que Playit sigue vivo
+              sleep 25
+              
               if ! kill -0 $PLAYIT_PID 2>/dev/null; then
-                echo "❌ Playit murió. Log completo:"
-                cat playit.log
-                break
+                echo ""
+                echo "❌ Playit se detuvo en el monitor"
+                tail -n 20 playit.log
+                exit 1
               fi
               
               LINK=$(grep -oE 'https://playit\.gg/claim/[a-zA-Z0-9-]+' playit.log | tail -1 || true)
               IP=$(grep -oE '[a-zA-Z0-9-]+\.(gl\.joinmc\.link|auto\.playit\.gg)' playit.log | tail -1 || true)
               
               echo ""
-              echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-              echo "⏱️  $(date '+%H:%M:%S')"
+              echo "🔄 $(date '+%H:%M:%S')"
               
               if [ -n "$IP" ]; then
-                echo "✅ SERVIDOR ACTIVO"
-                echo "🌐 IP: $IP"
+                echo "✅ SERVIDOR ACTIVO: $IP"
                 
-                # Extraer y guardar secret
-                if [ "$SECRET_GUARDADA" = false ]; then
-                  SECRET=$(grep -oP 'secret_key = "\K[^"]+' playit.log || grep -oP '"secret_key":\s*"\K[^"]+' playit.log || true)
-                  
-                  if [ -n "$SECRET" ]; then
-                    echo "$SECRET" > playit_secret.txt
+                if [ "$CONFIG_GUARDADA" = false ]; then
+                  if [ -d ~/.config/playit_gg ] && [ "$(ls -A ~/.config/playit_gg)" ]; then
+                    echo "💾 Guardando configuración..."
+                    sleep 5
                     
-                    if rclone copy playit_secret.txt gdrive: -v; then
-                      echo "✅ Secret guardada para próximas ejecuciones"
-                      SECRET_GUARDADA=true
+                    ls -lah ~/.config/playit_gg/
+                    
+                    if rclone copy ~/.config/playit_gg/ gdrive:playit_config/ -v; then
+                      echo "✅ Configuración guardada"
+                      CONFIG_GUARDADA=true
                     fi
                   fi
                 fi
                 
               elif [ -n "$LINK" ]; then
-                echo ""
-                echo "⚠️  ¡ACCIÓN REQUERIDA!"
-                echo ""
-                echo "🔗 VINCULA AQUÍ: $LINK"
-                echo ""
-                echo "📝 Después ve a: https://playit.gg/account/tunnels"
-                echo "   y crea un túnel TCP al puerto 25565"
-                echo ""
+                echo "⚠️ Esperando vinculación: $LINK"
               else
-                echo "⏳ Iniciando túnel..."
-                tail -n 3 playit.log
+                echo "⏳ Iniciando..."
               fi
-              
-              echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-              
-              sleep 20
             done
           ) &
           
-          # Esperar un poco antes de arrancar Minecraft
-          sleep 15
-          
-          # Arrancar Minecraft
+          echo ""
+          echo "✅ Monitor activo"
+
+      - name: Arrancar Minecraft
+        run: |
           echo ""
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo "🎮 INICIANDO MINECRAFT"
@@ -173,22 +206,10 @@ jobs:
           rclone copy ZerdolandIII.tar.gz gdrive: || true
           
           echo ""
-          echo "💾 Guardando secret de Playit..."
-          
-          # Intentar extraer secret del log si no se guardó antes
-          if [ -f playit.log ]; then
-            SECRET=$(grep -oP 'secret_key = "\K[^"]+' playit.log || grep -oP '"secret_key":\s*"\K[^"]+' playit.log || true)
-            
-            if [ -n "$SECRET" ] && [ ! -f playit_secret.txt ]; then
-              echo "$SECRET" > playit_secret.txt
-            fi
-          fi
-          
-          if [ -f playit_secret.txt ]; then
-            rclone copy playit_secret.txt gdrive: || true
-            echo "✅ Secret guardada"
-          else
-            echo "⚠️ No se pudo extraer la secret (puede que no se haya vinculado)"
+          echo "💾 Guardando configuración de Playit..."
+          if [ -d ~/.config/playit_gg ] && [ "$(ls -A ~/.config/playit_gg)" ]; then
+            ls -lah ~/.config/playit_gg/
+            rclone copy ~/.config/playit_gg/ gdrive:playit_config/ || true
           fi
           
           echo ""
