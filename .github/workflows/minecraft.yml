@@ -30,14 +30,20 @@ jobs:
 
       - name: Descargar el mundo y TU IP FIJA
         run: |
-          # 1. Descargar el mundo de forma limpia (un solo hilo para evitar archivos corruptos)
+          # 1. Descarga limpia adaptada a cualquier extensión (.tar.gz o .tar)
           rclone copy gdrive:ZerdolandIII.tar.gz ./ --multi-thread-streams 1 || true
+          rclone copy gdrive:ZerdolandIII.tar ./ --multi-thread-streams 1 || true
           
           if [ -f "ZerdolandIII.tar.gz" ]; then
-            echo "📦 Descomprimiendo mundo..."
-            tar -xzf ZerdolandIII.tar.gz
+            echo "📦 Descomprimiendo .tar.gz..."
+            tar -xf ZerdolandIII.tar.gz
             rm ZerdolandIII.tar.gz
+          elif [ -f "ZerdolandIII.tar" ]; then
+            echo "📦 Descomprimiendo .tar..."
+            tar -xf ZerdolandIII.tar
+            rm ZerdolandIII.tar
           else
+            echo "⚠️ No se encontró archivo comprimido, descargando carpeta suelta..."
             mkdir -p servidor
             rclone copy gdrive:ZerdolandIII ./servidor --transfers 8 || true
           fi
