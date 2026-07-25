@@ -30,9 +30,11 @@ jobs:
 
       - name: Descargar el mundo y TU IP FIJA
         run: |
-          # 1. Descargar el mundo
-          rclone copy gdrive:ZerdolandIII.tar.gz ./ || true
+          # 1. Descargar el mundo de forma limpia (un solo hilo para evitar archivos corruptos)
+          rclone copy gdrive:ZerdolandIII.tar.gz ./ --multi-thread-streams 1 || true
+          
           if [ -f "ZerdolandIII.tar.gz" ]; then
+            echo "📦 Descomprimiendo mundo..."
             tar -xzf ZerdolandIII.tar.gz
             rm ZerdolandIII.tar.gz
           else
@@ -43,7 +45,7 @@ jobs:
           # 2. Descargar la configuración de Playit a la ruta OFICIAL
           echo "Descargando configuración de Playit desde Drive..."
           sudo mkdir -p /etc/playit
-          rclone copy gdrive:playit_config/ ./playit_config_temp/ || true
+          rclone copy gdrive:playit_config/ ./playit_config_temp/ --multi-thread-streams 1 || true
           
           if [ -d "./playit_config_temp" ]; then
             sudo cp -r ./playit_config_temp/* /etc/playit/ || true
@@ -55,19 +57,19 @@ jobs:
 
       - name: Arrancar Playit y Servidor
         run: |
-          # 1. Instalar la versión oficial de Playit (la que NO da problemas)
+          # 1. Instalar la versión oficial de Playit
           curl -SsL https://playit-cloud.github.io/ppa/key.gpg | gpg --dearmor | sudo tee /etc/apt/trusted.gpg.d/playit.gpg >/dev/null
           echo "deb [signed-by=/etc/apt/trusted.gpg.d/playit.gpg] https://playit-cloud.github.io/ppa/data ./" | sudo tee /etc/apt/sources.list.d/playit-cloud.list
           sudo apt update
           sudo apt install playit -y
           
-          # 2. Detener el servicio oculto que GitHub no sabe leer
+          # 2. Detener el servicio oculto
           sudo service playit stop || true
           
-          # 3. Arrancar forzando a que escriba el log manual y lea el /etc/playit
+          # 3. Arrancar Playit con log manual
           sudo bash -c 'playit > playit.log 2>&1' &
           
-          # 4. Monitor ultra limpio
+          # 4. Monitor
           (
             while true; do
               IP=$(grep -oE '[a-zA-Z0-9-]+\.(gl\.joinmc\.link|auto\.playit\.gg)' playit.log | tail -n 1 || true)
@@ -77,7 +79,7 @@ jobs:
                 echo "✅ SERVIDOR ACTIVO. TU IP FIJA ES: $IP"
                 break
               else
-                echo "⏳ Leyendo tu configuración secreta..."
+                echo "⏳ Leyendo configuración y conectando..."
                 tail -n 2 playit.log || true
               fi
               echo "🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴"
@@ -96,9 +98,9 @@ jobs:
         run: |
           echo "Empaquetando servidor..."
           tar -czf ZerdolandIII.tar.gz servidor
-          rclone copy ZerdolandIII.tar.gz gdrive: || true
+          rclone copy ZerdolandIII.tar.gz gdrive: --multi-thread-streams 1 || true
           
           # Respaldo de seguridad de la IP
           sudo cp -r /etc/playit ./playit_config || true
           sudo chmod -R 777 ./playit_config || true
-          rclone copy ./playit_config/ gdrive:playit_config/ || true
+          rclone copy ./playit_config/ gdrive:playit_config/ --multi-thread-streams 1 || true
