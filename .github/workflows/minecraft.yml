@@ -28,9 +28,8 @@ jobs:
           ${{ secrets.RCLONE_CONF }}
           EOF
 
-      - name: Descargar el mundo y TU IP FIJA
+      - name: Descargar el mundo y configuración
         run: |
-          # 1. Descarga limpia adaptada a cualquier extensión (.tar.gz o .tar)
           rclone copy gdrive:ZerdolandIII.tar.gz ./ --multi-thread-streams 1 || true
           rclone copy gdrive:ZerdolandIII.tar ./ --multi-thread-streams 1 || true
           
@@ -43,21 +42,15 @@ jobs:
             tar -xf ZerdolandIII.tar
             rm ZerdolandIII.tar
           else
-            echo "⚠️ No se encontró archivo comprimido, descargando carpeta suelta..."
+            echo "⚠️ No se encontró archivo comprimido..."
             rclone copy gdrive:ZerdolandIII ./ZerdolandIII --transfers 8 || true
           fi
           
-          # 2. Descargar la configuración de Playit
-          echo "Descargando configuración de Playit desde Drive..."
           sudo mkdir -p /etc/playit
           rclone copy gdrive:playit_config/ ./playit_config_temp/ --multi-thread-streams 1 || true
-          
           if [ -d "./playit_config_temp" ]; then
             sudo cp -r ./playit_config_temp/* /etc/playit/ || true
             sudo chmod -R 777 /etc/playit || true
-            echo "✅ Configuración de Playit restaurada."
-          else
-            echo "⚠️ No se encontró la carpeta playit_config."
           fi
 
       - name: Abrir puertos para Voice Chat
@@ -67,21 +60,18 @@ jobs:
 
       - name: Arrancar Playit y Servidor
         run: |
-          # 1. Instalar dependencias (añadido 'screen' para el control del servidor)
           curl -SsL https://playit-cloud.github.io/ppa/key.gpg | gpg --dearmor | sudo tee /etc/apt/trusted.gpg.d/playit.gpg >/dev/null
           echo "deb [signed-by=/etc/apt/trusted.gpg.d/playit.gpg] https://playit-cloud.github.io/ppa/data ./" | sudo tee /etc/apt/sources.list.d/playit-cloud.list
           sudo apt update
           sudo apt install playit screen -y
           
-          # 2. Arrancar Playit
           sudo service playit stop || true
           sudo bash -c 'playit > playit.log 2>&1' &
           
-          # 3. Monitor de IP
+          # Monitor de Playit
           (
             while true; do
               IP=$(grep -oE '[a-zA-Z0-9-]+\.(gl\.joinmc\.link|auto\.playit\.gg)' playit.log | tail -n 1 || true)
-              
               if [ -n "$IP" ]; then
                 echo "✅ SERVIDOR ACTIVO. TU IP FIJA ES: $IP"
                 break
@@ -90,46 +80,76 @@ jobs:
             done
           ) &
           
-          # 4. Arrancar Minecraft en sesión oculta (screen)
+          # BUCLE DE AUTOGUARDADO CORREGIDO Y BLINDADO
+          (
+            sleep 600 # Espera 10 minutos iniciales para que la gente entre y se asiente
+            while true; do
+              if screen -list | grep -q "mcserver"; then
+                echo "💾 Iniciando backup en Drive..."
+                screen -S mcserver -X stuff "say 💾 Guardando progreso en la nube...$(printf \\r)"
+                
+                screen -S mcserver -X stuff "save-off$(printf \\r)"
+                screen -S mcserver -X stuff "save-all$(printf \\r)"
+                sleep 15 # Espera a que el disco escriba todos los bloques
+                
+                # Empaqueta en 3 segundos usando rutas absolutas exactas
+                tar -cf $GITHUB_WORKSPACE/ZerdolandIII.tar -C $GITHUB_WORKSPACE ZerdolandIII
+                
+                # Reactiva el servidor DE INMEDIATO para que no haya lag
+                screen -S mcserver -X stuff "save-on$(printf \\r)"
+                screen -S mcserver -X stuff "say ✅ Guardado cerrado. Subiendo a Drive en segundo plano.$(printf \\r)"
+                
+                # Sube a Drive (Esto tarda minutos, pero el server ya está libre)
+                rclone copy $GITHUB_WORKSPACE/ZerdolandIII.tar gdrive: --multi-thread-streams 1 || true
+              else
+                break
+              fi
+              sleep 1800 # Espera 30 minutos hasta el próximo guardado
+            done
+          ) &
+          
           cd ZerdolandIII
           echo "eula=true" > eula.txt
           chmod +x run.sh
           screen -d -m -S mcserver ./run.sh
           
-          echo "⏳ Servidor en marcha. Iniciando monitor de guardado (290 mins)..."
-          
-          # Bucle que vigila el servidor durante 4 horas y 50 minutos
-          for i in {1..290}; do
-            if ! screen -list | grep -q "mcserver"; then
-              echo "⚠️ El servidor se cerró antes de tiempo por un error interno."
-              break
-            fi
-            sleep 60
-          done
-          
-          # 5. Apagado suave y guardado forzoso
-          if screen -list | grep -q "mcserver"; then
-            echo "🛑 Iniciando guardado y apagado seguro..."
-            screen -S mcserver -X stuff "say ⚠️ REINICIO DEL SERVIDOR EN 10 SEGUNDOS PARA GUARDAR EL MUNDO$(printf \\r)"
-            sleep 10
-            screen -S mcserver -X stuff "save-all$(printf \\r)"
-            sleep 10
-            screen -S mcserver -X stuff "stop$(printf \\r)"
-            
-            while screen -list | grep -q "mcserver"; do
-              echo "Esperando a que termine de guardar en disco..."
-              sleep 5
-            done
-            echo "✅ Guardado completado sin pérdida de datos."
-          fi
+          echo "⏳ Servidor en marcha y blindado. Autoguardado optimizado ACTIVADO."
+          sleep 18000
 
       - name: Guardar mundo y seguro final
         if: always()
         run: |
-          echo "Empaquetando servidor..."
-          tar -cf ZerdolandIII.tar ZerdolandIII
-          rclone copy ZerdolandIII.tar gdrive: --multi-thread-streams 1 || true
+          echo "🛑 INICIANDO PROTOCOLO DE APAGADO SEGURO..."
           
-          sudo cp -r /etc/playit ./playit_config || true
-          sudo chmod -R 777 ./playit_config || true
-          rclone copy ./playit_config/ gdrive:playit_config/ --multi-thread-streams 1 || true
+          if screen -list | grep -q "mcserver"; then
+            screen -S mcserver -X stuff "say ⚠️ EL SERVIDOR SE ESTÁ APAGANDO PARA GUARDAR EL MUNDO DE FORMA SEGURA.$(printf \\r)"
+            sleep 3
+            
+            screen -S mcserver -X stuff "save-all$(printf \\r)"
+            sleep 15
+            
+            screen -S mcserver -X stuff "stop$(printf \\r)"
+            
+            contador=0
+            while screen -list | grep -q "mcserver"; do
+              sleep 5
+              contador=$((contador+5))
+              echo "Aún guardando... ($contador segundos de espera)"
+              if [ $contador -ge 300 ]; then
+                echo "⚠️ Se superó el tiempo máximo, forzando cierre."
+                break
+              fi
+            done
+            echo "✅ El mundo se ha cerrado de forma natural."
+          fi
+          
+          echo "📦 Empaquetando copia final..."
+          tar -cf $GITHUB_WORKSPACE/ZerdolandIII.tar -C $GITHUB_WORKSPACE ZerdolandIII
+          
+          echo "☁️ Subiendo a Google Drive..."
+          rclone copy $GITHUB_WORKSPACE/ZerdolandIII.tar gdrive: --multi-thread-streams 1 || true
+          
+          echo "☁️ Subiendo IPs de Playit..."
+          sudo cp -r /etc/playit $GITHUB_WORKSPACE/playit_config || true
+          sudo chmod -R 777 $GITHUB_WORKSPACE/playit_config || true
+          rclone copy $GITHUB_WORKSPACE/playit_config/ gdrive:playit_config/ --multi-thread-streams 1 || true
