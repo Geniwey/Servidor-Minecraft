@@ -107,8 +107,9 @@ jobs:
         if: always()
         run: |
           echo "Empaquetando servidor..."
-          tar -czf ZerdolandIII.tar.gz ZerdolandIII
-          rclone copy ZerdolandIII.tar.gz gdrive: --multi-thread-streams 1 || true
+          # Usamos -cf en lugar de -czf para que no comprima y tarde segundos en vez de minutos
+          tar -cf ZerdolandIII.tar ZerdolandIII
+          rclone copy ZerdolandIII.tar gdrive: --multi-thread-streams 1 || true
           
           # Respaldo de seguridad de la IP
           sudo cp -r /etc/playit ./playit_config || true
