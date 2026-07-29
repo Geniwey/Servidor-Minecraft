@@ -44,8 +44,7 @@ jobs:
             rm ZerdolandIII.tar
           else
             echo "⚠️ No se encontró archivo comprimido, descargando carpeta suelta..."
-            mkdir -p servidor
-            rclone copy gdrive:ZerdolandIII ./servidor --transfers 8 || true
+            rclone copy gdrive:ZerdolandIII ./ZerdolandIII --transfers 8 || true
           fi
           
           # 2. Descargar la configuración de Playit a la ruta OFICIAL
@@ -99,7 +98,7 @@ jobs:
           ) &
           
           # Arrancar Minecraft
-          cd servidor
+          cd ZerdolandIII
           echo "eula=true" > eula.txt
           chmod +x run.sh
           ./run.sh
@@ -108,7 +107,7 @@ jobs:
         if: always()
         run: |
           echo "Empaquetando servidor..."
-          tar -czf ZerdolandIII.tar.gz servidor
+          tar -czf ZerdolandIII.tar.gz ZerdolandIII
           rclone copy ZerdolandIII.tar.gz gdrive: --multi-thread-streams 1 || true
           
           # Respaldo de seguridad de la IP
