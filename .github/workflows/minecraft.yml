@@ -30,7 +30,6 @@ jobs:
 
       - name: Descargar el mundo y configuración
         run: |
-          # Intenta bajar los comprimidos primero porque es lo más rápido
           rclone copy gdrive:ZerdolandIII.tar.gz ./ --multi-thread-streams 1 || true
           rclone copy gdrive:ZerdolandIII.tar ./ --multi-thread-streams 1 || true
           
@@ -44,7 +43,6 @@ jobs:
             rm ZerdolandIII.tar
           else
             echo "⚠️ No hay TAR. Rescatando desde la carpeta suelta (Plan C)..."
-            # Si el TAR falla, baja la carpeta suelta a toda velocidad usando 16 hilos
             rclone copy gdrive:ZerdolandIII ./ZerdolandIII --transfers 16 --checkers 32 || true
           fi
           
@@ -82,42 +80,50 @@ jobs:
             done
           ) &
           
-          # BUCLE DE AUTOGUARDADO (Cada 30 minutos)
-          (
-            sleep 600
-            while true; do
-              if screen -list | grep -q "mcserver"; then
-                echo "💾 Iniciando backups rápidos..."
-                screen -S mcserver -X stuff "say 💾 Guardando progreso en la nube...$(printf \\r)"
-                
-                screen -S mcserver -X stuff "save-off$(printf \\r)"
-                screen -S mcserver -X stuff "save-all$(printf \\r)"
-                sleep 15
-                
-                tar -cf $GITHUB_WORKSPACE/ZerdolandIII.tar -C $GITHUB_WORKSPACE ZerdolandIII
-                
-                screen -S mcserver -X stuff "save-on$(printf \\r)"
-                screen -S mcserver -X stuff "say ✅ Guardado cerrado. Subiendo a Drive.$(printf \\r)"
-                
-                rclone copyto gdrive:ZerdolandIII.tar gdrive:ZerdolandIII_copia_seguridad.tar || true
-                rclone copy $GITHUB_WORKSPACE/ZerdolandIII.tar gdrive: --multi-thread-streams 1 || true
-                
-                # PLAN C INTELIGENTE: Sincroniza la carpeta suelta comprobando qué ha cambiado (poco a poco)
-                rclone sync $GITHUB_WORKSPACE/ZerdolandIII/ gdrive:ZerdolandIII/ --update --transfers 16 --checkers 32 || true
-              else
-                break
-              fi
-              sleep 1800
-            done
-          ) &
-          
           cd ZerdolandIII
           echo "eula=true" > eula.txt
           chmod +x run.sh
           screen -d -m -S mcserver ./run.sh
           
           echo "⏳ Servidor en marcha. Triple seguridad activada."
-          sleep 17100
+          
+          # RELOJ MAESTRO Y AUTOGUARDADO INTELIGENTE
+          TIEMPO_INICIO=$(date +%s)
+          sleep 600
+          
+          while true; do
+            TIEMPO_ACTUAL=$(date +%s)
+            TIEMPO_TRANSCURRIDO=$((TIEMPO_ACTUAL - TIEMPO_INICIO))
+            
+            # 16800 segundos = 4 horas y 40 minutos.
+            if [ $TIEMPO_TRANSCURRIDO -ge 16800 ]; then
+              echo "⏰ 4 horas y 40 minutos completados. Iniciando transición al apagado seguro..."
+              break
+            fi
+            
+            if screen -list | grep -q "mcserver"; then
+              echo "💾 Iniciando backups rápidos en Drive..."
+              screen -S mcserver -X stuff "say 💾 Guardando progreso en la nube...$(printf \\r)"
+              
+              screen -S mcserver -X stuff "save-off$(printf \\r)"
+              screen -S mcserver -X stuff "save-all$(printf \\r)"
+              sleep 15
+              
+              tar -cf $GITHUB_WORKSPACE/ZerdolandIII.tar -C $GITHUB_WORKSPACE ZerdolandIII
+              
+              screen -S mcserver -X stuff "save-on$(printf \\r)"
+              screen -S mcserver -X stuff "say ✅ Guardado cerrado. Subiendo a Drive.$(printf \\r)"
+              
+              rclone copyto gdrive:ZerdolandIII.tar gdrive:ZerdolandIII_copia_seguridad.tar || true
+              rclone copy $GITHUB_WORKSPACE/ZerdolandIII.tar gdrive: --multi-thread-streams 1 || true
+              rclone sync $GITHUB_WORKSPACE/ZerdolandIII/ gdrive:ZerdolandIII/ --update --transfers 16 --checkers 32 || true
+            else
+              echo "⚠️ El servidor se cerró desde dentro antes de tiempo."
+              break
+            fi
+            
+            sleep 1800
+          done
 
       - name: Guardar mundo y seguro final
         if: always()
@@ -143,13 +149,27 @@ jobs:
             done
           fi
           
+          echo "📦 Empaquetando copia final..."
           tar -cf $GITHUB_WORKSPACE/ZerdolandIII.tar -C $GITHUB_WORKSPACE ZerdolandIII
+          
+          echo "☁️ Creando copia de seguridad espejo en Drive..."
           rclone copyto gdrive:ZerdolandIII.tar gdrive:ZerdolandIII_copia_seguridad.tar || true
-          rclone copy $GITHUB_WORKSPACE/ZerdolandIII.tar gdrive: --multi-thread-streams 1 || true
           
-          # Sincronización final inteligente de la carpeta suelta (solo los últimos cambios)
-          rclone sync $GITHUB_WORKSPACE/ZerdolandIII/ gdrive:ZerdolandIII/ --update --transfers 16 --checkers 32 || true
+          echo "🚀 INICIANDO MODO FÓRMULA 1: Subiendo archivos en paralelo a Drive..."
+          # Al poner un "&" al final, las subidas se hacen a la vez en lugar de esperar su turno
           
+          # Tarea 1: Subir el .tar usando 4 canales de internet a la vez
+          rclone copy $GITHUB_WORKSPACE/ZerdolandIII.tar gdrive: --multi-thread-streams 4 &
+          
+          # Tarea 2: Subir la carpeta suelta forzando 32 transferencias de golpe
+          rclone sync $GITHUB_WORKSPACE/ZerdolandIII/ gdrive:ZerdolandIII/ --update --transfers 32 --checkers 64 &
+          
+          # Tarea 3: Guardar IPs de Playit
           sudo cp -r /etc/playit $GITHUB_WORKSPACE/playit_config || true
           sudo chmod -R 777 $GITHUB_WORKSPACE/playit_config || true
-          rclone copy $GITHUB_WORKSPACE/playit_config/ gdrive:playit_config/ --multi-thread-streams 1 || true
+          rclone copy $GITHUB_WORKSPACE/playit_config/ gdrive:playit_config/ &
+          
+          # "wait" le dice a GitHub que espere hasta que las 3 tareas terminen antes de dar por cerrado el servidor
+          wait
+          
+          echo "✅ CICLO Y SUBIDAS COMPLETADOS A MÁXIMA VELOCIDAD."
