@@ -82,7 +82,7 @@ jobs:
           
           # BUCLE DE AUTOGUARDADO CORREGIDO Y BLINDADO
           (
-            sleep 600 # Espera 10 minutos iniciales para que la gente entre y se asiente
+            sleep 600 # Espera 10 minutos iniciales
             while true; do
               if screen -list | grep -q "mcserver"; then
                 echo "💾 Iniciando backup en Drive..."
@@ -92,14 +92,17 @@ jobs:
                 screen -S mcserver -X stuff "save-all$(printf \\r)"
                 sleep 15 # Espera a que el disco escriba todos los bloques
                 
-                # Empaqueta en 3 segundos usando rutas absolutas exactas
+                # Empaqueta
                 tar -cf $GITHUB_WORKSPACE/ZerdolandIII.tar -C $GITHUB_WORKSPACE ZerdolandIII
                 
                 # Reactiva el servidor DE INMEDIATO para que no haya lag
                 screen -S mcserver -X stuff "save-on$(printf \\r)"
                 screen -S mcserver -X stuff "say ✅ Guardado cerrado. Subiendo a Drive en segundo plano.$(printf \\r)"
                 
-                # Sube a Drive (Esto tarda minutos, pero el server ya está libre)
+                # CREA EL SALVAVIDAS ESPEJO ANTES DE SUBIR EL NUEVO (Ocurre en 1 segundo en Google)
+                rclone copyto gdrive:ZerdolandIII.tar gdrive:ZerdolandIII_copia_seguridad.tar || true
+                
+                # Sube a Drive el archivo nuevo
                 rclone copy $GITHUB_WORKSPACE/ZerdolandIII.tar gdrive: --multi-thread-streams 1 || true
               else
                 break
@@ -114,7 +117,7 @@ jobs:
           screen -d -m -S mcserver ./run.sh
           
           echo "⏳ Servidor en marcha y blindado. Autoguardado optimizado ACTIVADO."
-          # CORRECCIÓN CRÍTICA: Despierta y apaga de forma natural a las 4 horas y 45 minutos (17100s)
+          # Despierta y apaga de forma natural a las 4 horas y 45 minutos (17100s)
           sleep 17100
 
       - name: Guardar mundo y seguro final
@@ -146,6 +149,9 @@ jobs:
           
           echo "📦 Empaquetando copia final..."
           tar -cf $GITHUB_WORKSPACE/ZerdolandIII.tar -C $GITHUB_WORKSPACE ZerdolandIII
+          
+          echo "☁️ Creando copia de seguridad espejo en Drive..."
+          rclone copyto gdrive:ZerdolandIII.tar gdrive:ZerdolandIII_copia_seguridad.tar || true
           
           echo "☁️ Subiendo a Google Drive..."
           rclone copy $GITHUB_WORKSPACE/ZerdolandIII.tar gdrive: --multi-thread-streams 1 || true
