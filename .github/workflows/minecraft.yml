@@ -47,7 +47,7 @@ jobs:
             rclone copy gdrive:ZerdolandIII ./ZerdolandIII --transfers 8 || true
           fi
           
-          # 2. Descargar la configuración de Playit a la ruta OFICIAL
+          # 2. Descargar la configuración de Playit
           echo "Descargando configuración de Playit desde Drive..."
           sudo mkdir -p /etc/playit
           rclone copy gdrive:playit_config/ ./playit_config_temp/ --multi-thread-streams 1 || true
@@ -55,7 +55,7 @@ jobs:
           if [ -d "./playit_config_temp" ]; then
             sudo cp -r ./playit_config_temp/* /etc/playit/ || true
             sudo chmod -R 777 /etc/playit || true
-            echo "✅ Configuración de Playit restaurada en /etc/playit."
+            echo "✅ Configuración de Playit restaurada."
           else
             echo "⚠️ No se encontró la carpeta playit_config."
           fi
@@ -67,51 +67,69 @@ jobs:
 
       - name: Arrancar Playit y Servidor
         run: |
-          # 1. Instalar la versión oficial de Playit
+          # 1. Instalar dependencias (añadido 'screen' para el control del servidor)
           curl -SsL https://playit-cloud.github.io/ppa/key.gpg | gpg --dearmor | sudo tee /etc/apt/trusted.gpg.d/playit.gpg >/dev/null
           echo "deb [signed-by=/etc/apt/trusted.gpg.d/playit.gpg] https://playit-cloud.github.io/ppa/data ./" | sudo tee /etc/apt/sources.list.d/playit-cloud.list
           sudo apt update
-          sudo apt install playit -y
+          sudo apt install playit screen -y
           
-          # 2. Detener el servicio oculto
+          # 2. Arrancar Playit
           sudo service playit stop || true
-          
-          # 3. Arrancar Playit con log manual
           sudo bash -c 'playit > playit.log 2>&1' &
           
-          # 4. Monitor
+          # 3. Monitor de IP
           (
             while true; do
               IP=$(grep -oE '[a-zA-Z0-9-]+\.(gl\.joinmc\.link|auto\.playit\.gg)' playit.log | tail -n 1 || true)
               
-              echo "🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴"
               if [ -n "$IP" ]; then
                 echo "✅ SERVIDOR ACTIVO. TU IP FIJA ES: $IP"
                 break
-              else
-                echo "⏳ Leyendo configuración y conectando..."
-                tail -n 2 playit.log || true
               fi
-              echo "🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴"
               sleep 15
             done
           ) &
           
-          # Arrancar Minecraft
+          # 4. Arrancar Minecraft en sesión oculta (screen)
           cd ZerdolandIII
           echo "eula=true" > eula.txt
           chmod +x run.sh
-          ./run.sh
+          screen -d -m -S mcserver ./run.sh
+          
+          echo "⏳ Servidor en marcha. Iniciando monitor de guardado (290 mins)..."
+          
+          # Bucle que vigila el servidor durante 4 horas y 50 minutos
+          for i in {1..290}; do
+            if ! screen -list | grep -q "mcserver"; then
+              echo "⚠️ El servidor se cerró antes de tiempo por un error interno."
+              break
+            fi
+            sleep 60
+          done
+          
+          # 5. Apagado suave y guardado forzoso
+          if screen -list | grep -q "mcserver"; then
+            echo "🛑 Iniciando guardado y apagado seguro..."
+            screen -S mcserver -X stuff "say ⚠️ REINICIO DEL SERVIDOR EN 10 SEGUNDOS PARA GUARDAR EL MUNDO$(printf \\r)"
+            sleep 10
+            screen -S mcserver -X stuff "save-all$(printf \\r)"
+            sleep 10
+            screen -S mcserver -X stuff "stop$(printf \\r)"
+            
+            while screen -list | grep -q "mcserver"; do
+              echo "Esperando a que termine de guardar en disco..."
+              sleep 5
+            done
+            echo "✅ Guardado completado sin pérdida de datos."
+          fi
 
       - name: Guardar mundo y seguro final
         if: always()
         run: |
           echo "Empaquetando servidor..."
-          # Usamos -cf en lugar de -czf para que no comprima y tarde segundos en vez de minutos
           tar -cf ZerdolandIII.tar ZerdolandIII
           rclone copy ZerdolandIII.tar gdrive: --multi-thread-streams 1 || true
           
-          # Respaldo de seguridad de la IP
           sudo cp -r /etc/playit ./playit_config || true
           sudo chmod -R 777 ./playit_config || true
           rclone copy ./playit_config/ gdrive:playit_config/ --multi-thread-streams 1 || true
