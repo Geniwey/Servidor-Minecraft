@@ -30,6 +30,7 @@ jobs:
 
       - name: Descargar el mundo y configuración
         run: |
+          # Intenta bajar los comprimidos primero porque es lo más rápido
           rclone copy gdrive:ZerdolandIII.tar.gz ./ --multi-thread-streams 1 || true
           rclone copy gdrive:ZerdolandIII.tar ./ --multi-thread-streams 1 || true
           
@@ -42,8 +43,9 @@ jobs:
             tar -xf ZerdolandIII.tar
             rm ZerdolandIII.tar
           else
-            echo "⚠️ No se encontró archivo comprimido..."
-            rclone copy gdrive:ZerdolandIII ./ZerdolandIII --transfers 8 || true
+            echo "⚠️ No hay TAR. Rescatando desde la carpeta suelta (Plan C)..."
+            # Si el TAR falla, baja la carpeta suelta a toda velocidad usando 16 hilos
+            rclone copy gdrive:ZerdolandIII ./ZerdolandIII --transfers 16 --checkers 32 || true
           fi
           
           sudo mkdir -p /etc/playit
@@ -80,34 +82,32 @@ jobs:
             done
           ) &
           
-          # BUCLE DE AUTOGUARDADO CORREGIDO Y BLINDADO
+          # BUCLE DE AUTOGUARDADO (Cada 30 minutos)
           (
-            sleep 600 # Espera 10 minutos iniciales
+            sleep 600
             while true; do
               if screen -list | grep -q "mcserver"; then
-                echo "💾 Iniciando backup en Drive..."
+                echo "💾 Iniciando backups rápidos..."
                 screen -S mcserver -X stuff "say 💾 Guardando progreso en la nube...$(printf \\r)"
                 
                 screen -S mcserver -X stuff "save-off$(printf \\r)"
                 screen -S mcserver -X stuff "save-all$(printf \\r)"
-                sleep 15 # Espera a que el disco escriba todos los bloques
+                sleep 15
                 
-                # Empaqueta
                 tar -cf $GITHUB_WORKSPACE/ZerdolandIII.tar -C $GITHUB_WORKSPACE ZerdolandIII
                 
-                # Reactiva el servidor DE INMEDIATO para que no haya lag
                 screen -S mcserver -X stuff "save-on$(printf \\r)"
-                screen -S mcserver -X stuff "say ✅ Guardado cerrado. Subiendo a Drive en segundo plano.$(printf \\r)"
+                screen -S mcserver -X stuff "say ✅ Guardado cerrado. Subiendo a Drive.$(printf \\r)"
                 
-                # CREA EL SALVAVIDAS ESPEJO ANTES DE SUBIR EL NUEVO (Ocurre en 1 segundo en Google)
                 rclone copyto gdrive:ZerdolandIII.tar gdrive:ZerdolandIII_copia_seguridad.tar || true
-                
-                # Sube a Drive el archivo nuevo
                 rclone copy $GITHUB_WORKSPACE/ZerdolandIII.tar gdrive: --multi-thread-streams 1 || true
+                
+                # PLAN C INTELIGENTE: Sincroniza la carpeta suelta comprobando qué ha cambiado (poco a poco)
+                rclone sync $GITHUB_WORKSPACE/ZerdolandIII/ gdrive:ZerdolandIII/ --update --transfers 16 --checkers 32 || true
               else
                 break
               fi
-              sleep 1800 # Espera 30 minutos hasta el próximo guardado
+              sleep 1800
             done
           ) &
           
@@ -116,8 +116,7 @@ jobs:
           chmod +x run.sh
           screen -d -m -S mcserver ./run.sh
           
-          echo "⏳ Servidor en marcha y blindado. Autoguardado optimizado ACTIVADO."
-          # Despierta y apaga de forma natural a las 4 horas y 45 minutos (17100s)
+          echo "⏳ Servidor en marcha. Triple seguridad activada."
           sleep 17100
 
       - name: Guardar mundo y seguro final
@@ -138,25 +137,19 @@ jobs:
             while screen -list | grep -q "mcserver"; do
               sleep 5
               contador=$((contador+5))
-              echo "Aún guardando... ($contador segundos de espera)"
               if [ $contador -ge 300 ]; then
-                echo "⚠️ Se superó el tiempo máximo, forzando cierre."
                 break
               fi
             done
-            echo "✅ El mundo se ha cerrado de forma natural."
           fi
           
-          echo "📦 Empaquetando copia final..."
           tar -cf $GITHUB_WORKSPACE/ZerdolandIII.tar -C $GITHUB_WORKSPACE ZerdolandIII
-          
-          echo "☁️ Creando copia de seguridad espejo en Drive..."
           rclone copyto gdrive:ZerdolandIII.tar gdrive:ZerdolandIII_copia_seguridad.tar || true
-          
-          echo "☁️ Subiendo a Google Drive..."
           rclone copy $GITHUB_WORKSPACE/ZerdolandIII.tar gdrive: --multi-thread-streams 1 || true
           
-          echo "☁️ Subiendo IPs de Playit..."
+          # Sincronización final inteligente de la carpeta suelta (solo los últimos cambios)
+          rclone sync $GITHUB_WORKSPACE/ZerdolandIII/ gdrive:ZerdolandIII/ --update --transfers 16 --checkers 32 || true
+          
           sudo cp -r /etc/playit $GITHUB_WORKSPACE/playit_config || true
           sudo chmod -R 777 $GITHUB_WORKSPACE/playit_config || true
           rclone copy $GITHUB_WORKSPACE/playit_config/ gdrive:playit_config/ --multi-thread-streams 1 || true
