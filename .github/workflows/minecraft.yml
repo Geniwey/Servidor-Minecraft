@@ -61,6 +61,11 @@ jobs:
             echo "⚠️ No se encontró la carpeta playit_config."
           fi
 
+      - name: Abrir puertos para Voice Chat
+        run: |
+          sudo ufw allow 24454/udp
+          sudo ufw reload
+
       - name: Arrancar Playit y Servidor
         run: |
           # 1. Instalar la versión oficial de Playit
