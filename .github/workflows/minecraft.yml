@@ -85,9 +85,9 @@ jobs:
           chmod +x run.sh
           screen -d -m -S mcserver ./run.sh
           
-          echo "⏳ Servidor en marcha. Triple seguridad activada."
+          echo "⏳ Servidor en marcha. Seguridad en Modo Cascada activada."
           
-          # RELOJ MAESTRO Y AUTOGUARDADO INTELIGENTE
+          # RELOJ MAESTRO Y AUTOGUARDADO INTELIGENTE (30 MIN)
           TIEMPO_INICIO=$(date +%s)
           sleep 600
           
@@ -131,11 +131,12 @@ jobs:
           echo "🛑 INICIANDO PROTOCOLO DE APAGADO SEGURO..."
           
           if screen -list | grep -q "mcserver"; then
-            screen -S mcserver -X stuff "say ⚠️ EL SERVIDOR SE ESTÁ APAGANDO PARA EL REINICIO SEGURO.$(printf \\r)"
+            screen -S mcserver -X stuff "say ⚠️ EL SERVIDOR SE ESTÁ APAGANDO PARA GUARDAR EL MUNDO.$(printf \\r)"
             sleep 3
             
             screen -S mcserver -X stuff "save-all$(printf \\r)"
-            sleep 15
+            # Reducido de 15s a 10s para rascar más tiempo al reloj de GitHub
+            sleep 10
             
             screen -S mcserver -X stuff "stop$(printf \\r)"
             
@@ -143,7 +144,9 @@ jobs:
             while screen -list | grep -q "mcserver"; do
               sleep 5
               contador=$((contador+5))
-              if [ $contador -ge 300 ]; then
+              # Si tarda más de un minuto en cerrarse, cortamos la espera
+              if [ $contador -ge 60 ]; then
+                echo "⚠️ El servidor tarda mucho en cerrar, forzando empaquetado."
                 break
               fi
             done
@@ -152,24 +155,21 @@ jobs:
           echo "📦 Empaquetando copia final..."
           tar -cf $GITHUB_WORKSPACE/ZerdolandIII.tar -C $GITHUB_WORKSPACE ZerdolandIII
           
-          echo "☁️ Creando copia de seguridad espejo en Drive..."
-          rclone copyto gdrive:ZerdolandIII.tar gdrive:ZerdolandIII_copia_seguridad.tar || true
+          echo "🚀 INICIANDO MODO CASCADA: Subiendo por orden de prioridad..."
           
-          echo "🚀 INICIANDO MODO FÓRMULA 1: Subiendo archivos en paralelo a Drive..."
-          # Al poner un "&" al final, las subidas se hacen a la vez en lugar de esperar su turno
+          echo "1️⃣ PRIORIDAD 1: Subiendo el TAR principal a Drive..."
+          # Usamos 8 canales de subida a la vez para que el TAR vuele
+          rclone copy $GITHUB_WORKSPACE/ZerdolandIII.tar gdrive: --multi-thread-streams 8 || true
           
-          # Tarea 1: Subir el .tar usando 4 canales de internet a la vez
-          rclone copy $GITHUB_WORKSPACE/ZerdolandIII.tar gdrive: --multi-thread-streams 4 &
-          
-          # Tarea 2: Subir la carpeta suelta forzando 32 transferencias de golpe
-          rclone sync $GITHUB_WORKSPACE/ZerdolandIII/ gdrive:ZerdolandIII/ --update --transfers 32 --checkers 64 &
-          
-          # Tarea 3: Guardar IPs de Playit
+          echo "2️⃣ PRIORIDAD 2: Guardando configuración de Playit..."
           sudo cp -r /etc/playit $GITHUB_WORKSPACE/playit_config || true
           sudo chmod -R 777 $GITHUB_WORKSPACE/playit_config || true
-          rclone copy $GITHUB_WORKSPACE/playit_config/ gdrive:playit_config/ &
+          rclone copy $GITHUB_WORKSPACE/playit_config/ gdrive:playit_config/ || true
           
-          # "wait" le dice a GitHub que espere hasta que las 3 tareas terminen antes de dar por cerrado el servidor
-          wait
+          echo "3️⃣ PRIORIDAD 3: Creando copia espejo de seguridad en Drive..."
+          rclone copyto gdrive:ZerdolandIII.tar gdrive:ZerdolandIII_copia_seguridad.tar || true
           
-          echo "✅ CICLO Y SUBIDAS COMPLETADOS A MÁXIMA VELOCIDAD."
+          echo "4️⃣ PRIORIDAD 4: Sincronizando carpeta suelta (Plan C)..."
+          rclone sync $GITHUB_WORKSPACE/ZerdolandIII/ gdrive:ZerdolandIII/ --update --transfers 32 --checkers 64 || true
+          
+          echo "✅ TODO GUARDADO CORRECTAMENTE."
