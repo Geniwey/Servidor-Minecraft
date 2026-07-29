@@ -114,7 +114,8 @@ jobs:
           screen -d -m -S mcserver ./run.sh
           
           echo "⏳ Servidor en marcha y blindado. Autoguardado optimizado ACTIVADO."
-          sleep 18000
+          # CORRECCIÓN CRÍTICA: Despierta y apaga de forma natural a las 4 horas y 45 minutos (17100s)
+          sleep 17100
 
       - name: Guardar mundo y seguro final
         if: always()
@@ -122,7 +123,7 @@ jobs:
           echo "🛑 INICIANDO PROTOCOLO DE APAGADO SEGURO..."
           
           if screen -list | grep -q "mcserver"; then
-            screen -S mcserver -X stuff "say ⚠️ EL SERVIDOR SE ESTÁ APAGANDO PARA GUARDAR EL MUNDO DE FORMA SEGURA.$(printf \\r)"
+            screen -S mcserver -X stuff "say ⚠️ EL SERVIDOR SE ESTÁ APAGANDO PARA EL REINICIO SEGURO.$(printf \\r)"
             sleep 3
             
             screen -S mcserver -X stuff "save-all$(printf \\r)"
